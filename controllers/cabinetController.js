@@ -283,3 +283,38 @@ exports.addCabinet = (req, res) => {
   });
 };
 
+//delete cabinet by id
+exports.deleteCabinet = (req, res) => {
+  const cabinetID = req.params.cabinetID;
+
+  if (!cabinetID) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cabinet ID is required',
+    });
+  }
+
+  const deleteQuery = 'DELETE FROM fac_cabinet WHERE CabinetID = ?'; // Adjust table name and column name as needed
+
+  db.query(deleteQuery, [cabinetID], (error, results) => {
+    if (error) {
+      console.error('Error deleting cabinet:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'An error occurred while deleting the cabinet',
+      });
+    }
+
+    if (results.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cabinet not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Cabinet deleted successfully',
+    });
+  });
+};

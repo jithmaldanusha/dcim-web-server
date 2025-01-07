@@ -1,6 +1,7 @@
-const db = require('../models/db');
+const db = require('../models/db'); // Updated to use the promise-based db
 
-exports.getCabinets = (req, res) => {
+// Fetch all cabinets
+exports.getCabinets = async (req, res) => {
   const query = `
     SELECT 
       c.CabinetID, 
@@ -9,25 +10,60 @@ exports.getCabinets = (req, res) => {
     FROM fac_cabinet c
     JOIN fac_datacenter d ON c.DataCenterID = d.DataCenterID;
   `;
-
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching cabinets:', err);
-      return res.status(500).json({ error: 'Failed to fetch cabinets' });
-    }
+  try {
+    const [results] = await db.execute(query);
     res.json(results);
-  });
+  } catch (err) {
+    console.error('Error fetching cabinets:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 };
 
-exports.getCabinetByLocation = (req, res) => {
+// Fetch cabinets by datacenter
+exports.getCabinetsByDataCenter = async (req, res) => {
+  const datacenterName = req.params.datacenter;
+
+  if (!datacenterName) {
+    return res.status(400).json({ error: 'Datacenter parameter is required' });
+  }
+
+  try {
+    const dataCenterQuery = `SELECT DataCenterID FROM fac_datacenter WHERE Name = ?`;
+    const [dataCenterResult] = await db.execute(dataCenterQuery, [datacenterName]);
+
+    if (dataCenterResult.length === 0) {
+      return res.status(404).json({ error: 'Datacenter not found' });
+    }
+
+    const dataCenterID = dataCenterResult[0].DataCenterID;
+
+    const cabinetQuery = `SELECT Location FROM fac_cabinet WHERE DataCenterID = ?`;
+    const [cabinetResults] = await db.execute(cabinetQuery, [dataCenterID]);
+
+    if (cabinetResults.length === 0) {
+      return res.status(404).json({ error: 'Cabinets not found' });
+    }
+
+    const cabinetNames = cabinetResults.map(cabinet => cabinet.Location);
+    res.json(cabinetNames);
+  } catch (err) {
+    console.error('Error fetching cabinets:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+// Fetch cabinet by location
+exports.getCabinetByLocation = async (req, res) => {
   const location = req.params.location;
 
-  // SQL query to fetch cabinet details by location
+  if (!location) {
+    return res.status(400).json({ error: 'Location parameter is required' });
+  }
+
   const query = `
     SELECT
       fc.CabinetID,
       fc.Location AS Cabinet,
-      fc.Location AS Location,
       fd.Name AS DataCenter,
       fdept.Name AS AssignedTo,
       fz.Description AS Zone,
@@ -39,6 +75,10 @@ exports.getCabinetByLocation = (req, res) => {
       fc.MaxKW,
       fc.MaxWeight,
       fc.InstallationDate AS DateOfInstallation,
+      fc.MapX1 As x1,
+      fc.MapX1 As x2,
+      fc.MapY1 As y1,
+      fc.MapY1 As y2,
       fc.Notes
     FROM fac_cabinet fc
     LEFT JOIN fac_datacenter fd ON fc.DataCenterID = fd.DataCenterID
@@ -47,33 +87,26 @@ exports.getCabinetByLocation = (req, res) => {
     LEFT JOIN fac_cabrow fcr ON fc.CabRowID = fcr.CabRowID
     WHERE fc.Location = ?
   `;
-
-  if (!location) {
-    return res.json(null);
-  }
-
-  db.query(query, [location], (err, results) => {
-    if (err) {
-      console.error('Error fetching cabinet:', err);
-      return res.status(500).json({ error: 'Failed to fetch cabinet' });
-    }
+  try {
+    const [results] = await db.execute(query, [location]);
 
     if (results.length === 0) {
-      return res.json(null);
+      return res.status(404).json({ error: 'Cabinet not found' });
     }
 
     res.json(results[0]);
-  });
+  } catch (err) {
+    console.error('Error fetching cabinet:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 };
 
-exports.updateCabinet = (req, res) => {
-  console.log('Received body for update:', req.body);
-
+// Update cabinet details
+exports.updateCabinet = async (req, res) => {
   const {
     cabinetID,
-    dataCenter,
     location,
-    locationSortable,
+    dataCenter,
     assignedTo,
     zone,
     cabinetRow,
@@ -92,110 +125,57 @@ exports.updateCabinet = (req, res) => {
   } = req.body;
 
   if (!cabinetID) {
-    return res.status(400).json({ error: 'cabinetID is required for updating a record' });
+    return res.status(400).json({ error: 'cabinetID is required' });
   }
 
-  // Initialize the base query
-  let updateQuery = `UPDATE fac_cabinet SET `;
-  const values = [];
+  try {
+    const fields = [];
+    const values = [];
 
-  // Dynamically add fields based on provided data
-  if (location !== undefined) {
-    updateQuery += `Location = ?, `;
-    values.push(location);
-  }
-  if (locationSortable !== undefined) {
-    updateQuery += `LocationSortable = ?, `;
-    values.push(locationSortable);
-  }
-  if (dataCenter !== undefined) {
-    updateQuery += `DataCenterID = (SELECT DataCenterID FROM fac_datacenter WHERE Name = ? LIMIT 1), `;
-    values.push(dataCenter);
-  }
-  if (assignedTo !== undefined) {
-    updateQuery += `AssignedTo = ${assignedTo ? `(SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1)` : 'NULL'}, `;
-    if (assignedTo) values.push(assignedTo);
-  }
-  if (zone !== undefined) {
-    updateQuery += `ZoneID = (SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1), `;
-    values.push(zone);
-  }
-  if (cabinetRow !== undefined) {
-    updateQuery += `CabRowID = (SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1), `;
-    values.push(cabinetRow);
-  }
-  if (cabinetHeight !== undefined) {
-    updateQuery += `CabinetHeight = ?, `;
-    values.push(cabinetHeight);
-  }
-  if (u1Position !== undefined) {
-    updateQuery += `U1Position = ?, `;
-    values.push(u1Position);
-  }
-  if (model !== undefined) {
-    updateQuery += `Model = ?, `;
-    values.push(model);
-  }
-  if (keyLockInfo !== undefined) {
-    updateQuery += `Keylock = ?, `;
-    values.push(keyLockInfo);
-  }
-  if (maxKW !== undefined) {
-    updateQuery += `MaxKW = ?, `;
-    values.push(maxKW);
-  }
-  if (maxWeight !== undefined) {
-    updateQuery += `MaxWeight = ?, `;
-    values.push(maxWeight);
-  }
-  if (dateOfInstallation !== undefined) {
-    updateQuery += `InstallationDate = ?, `;
-    const installationDate = dateOfInstallation ? new Date(dateOfInstallation) : null;
-    values.push(installationDate);
-  }
-  if (mapX1 !== undefined) {
-    updateQuery += `MapX1 = ?, `;
-    values.push(mapX1);
-  }
-  if (mapX2 !== undefined) {
-    updateQuery += `MapX2 = ?, `;
-    values.push(mapX2);
-  }
-  if (mapY1 !== undefined) {
-    updateQuery += `MapY1 = ?, `;
-    values.push(mapY1);
-  }
-  if (mapY2 !== undefined) {
-    updateQuery += `MapY2 = ?, `;
-    values.push(mapY2);
-  }
-  if (notes !== undefined) {
-    updateQuery += `Notes = ?, `;
-    values.push(notes);
-  }
+    if (location) fields.push('Location = ?'), values.push(location);
+    if (dataCenter) fields.push('DataCenterID = (SELECT DataCenterID FROM fac_datacenter WHERE Name = ? LIMIT 1)'), values.push(dataCenter);
+    if (assignedTo) fields.push('AssignedTo = (SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1)'), values.push(assignedTo);
+    if (zone) fields.push('ZoneID = (SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1)'), values.push(zone);
+    if (cabinetRow) fields.push('CabRowID = (SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1)'), values.push(cabinetRow);
+    if (cabinetHeight) fields.push('CabinetHeight = ?'), values.push(cabinetHeight);
+    if (u1Position) fields.push('U1Position = ?'), values.push(u1Position);
+    if (model) fields.push('Model = ?'), values.push(model);
+    if (keyLockInfo) fields.push('Keylock = ?'), values.push(keyLockInfo);
+    if (maxKW) fields.push('MaxKW = ?'), values.push(maxKW);
+    if (maxWeight) fields.push('MaxWeight = ?'), values.push(maxWeight);
+    if (dateOfInstallation) fields.push('InstallationDate = ?'), values.push(new Date(dateOfInstallation));
+    if (mapX1) fields.push('MapX1 = ?'), values.push(mapX1);
+    if (mapX2) fields.push('MapX2 = ?'), values.push(mapX2);
+    if (mapY1) fields.push('MapY1 = ?'), values.push(mapY1);
+    if (mapY2) fields.push('MapY2 = ?'), values.push(mapY2);
+    if (notes) fields.push('Notes = ?'), values.push(notes);
 
-  // Remove the last comma and add WHERE clause
-  updateQuery = updateQuery.slice(0, -2) + ` WHERE CabinetID = ?`;
-  values.push(cabinetID);
-
-  // Execute the query
-  db.query(updateQuery, values, (err, results) => {
-    if (err) {
-      console.error('Error updating cabinet:', err);
-      return res.status(500).json({ error: 'Failed to update cabinet' });
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No fields provided for update' });
     }
 
+    const query = `
+      UPDATE fac_cabinet
+      SET ${fields.join(', ')}
+      WHERE CabinetID = ?
+    `;
+    values.push(cabinetID);
+
+    const [results] = await db.execute(query, values);
+
     if (results.affectedRows === 0) {
-      return res.status(404).json({ error: 'No cabinet found with the provided cabinetID' });
+      return res.status(404).json({ error: 'Cabinet not found' });
     }
 
     res.json({ success: true, message: 'Cabinet updated successfully' });
-  });
+  } catch (err) {
+    console.error('Error updating cabinet:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 };
 
-// Add a new cabinet record with auto-increment CabinetID
-exports.addCabinet = (req, res) => {
-  console.log('Received body for insert:', req.body);
+// Add a new cabinet
+exports.addCabinet = async (req, res) => {
   const {
     dataCenter,
     location,
@@ -212,109 +192,56 @@ exports.addCabinet = (req, res) => {
     notes,
   } = req.body;
 
-  const installationDate = dateOfInstallation ? new Date(dateOfInstallation) : null;
+  try {
+    // Check if zone or cabinetRow is "N/A" and assign 0, otherwise use the subquery for the actual value
+    const zoneQuery = zone === 'N/A' ? '0' : `(SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1)`;
+    const cabinetRowQuery = cabinetRow === 'N/A' ? '0' : `(SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1)`;
 
-  // Query to fetch MapX1, MapX2, MapY1, MapY2 values from the fac_zone table based on the zone
-  const zoneQuery = `
-    SELECT MapX1, MapX2, MapY1, MapY2 
-    FROM fac_zone 
-    WHERE Description = ? 
-    LIMIT 1
-  `;
-
-  db.query(zoneQuery, [zone], (zoneErr, zoneResults) => {
-    if (zoneErr) {
-      console.error('Error fetching zone map coordinates:', zoneErr);
-      return res.status(500).json({ error: 'Failed to fetch zone map coordinates' });
-    }
-
-    if (zoneResults.length === 0) {
-      return res.status(404).json({ error: 'No zone found with the provided description' });
-    }
-
-    const { MapX1, MapX2, MapY1, MapY2 } = zoneResults[0];
-
-    // Query to insert the new cabinet record
     const insertQuery = `
       INSERT INTO fac_cabinet (
-        Location, LocationSortable, DataCenterID, AssignedTo, ZoneID, CabRowID, 
-        CabinetHeight, U1Position, FrontEdge, Model, Keylock, MaxKW, MaxWeight, 
-        InstallationDate, Notes, MapX1, MapX2, MapY1, MapY2
-      ) VALUES (
-        ?, ?, 
+        Location, DataCenterID, AssignedTo, ZoneID, CabRowID, CabinetHeight, 
+        U1Position, Model, Keylock, MaxKW, MaxWeight, InstallationDate, Notes, MapX1, MapX2, MapY1, MapY2
+      ) 
+      VALUES (
+        ?, 
         (SELECT DataCenterID FROM fac_datacenter WHERE Name = ? LIMIT 1), 
-        ${assignedTo ? `(SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1)` : 'NULL'}, 
-        (SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1), 
-        (SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1),
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      )
-    `;
+        (SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1), 
+        ${zoneQuery}, ${cabinetRowQuery}, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0
+      );`;
 
     const values = [
-      location, // Location
-      location, // LocationSortable (same as Location)
-      dataCenter, // DataCenterID
-      assignedTo, // AssignedTo (conditional query if provided)
-      zone, // ZoneID
-      cabinetRow, // CabRowID
-      cabinetHeight, // CabinetHeight
-      u1Position, // U1Position
-      u1Position, // FrontEdge (same as U1Position)
-      model, // Model
-      keyLockInfo, // Keylock
-      maxKW, // MaxKW
-      maxWeight, // MaxWeight
-      installationDate, // InstallationDate
-      notes, // Notes
-      MapX1, // MapX1 from fac_zone
-      MapX2, // MapX2 from fac_zone
-      MapY1, // MapY1 from fac_zone
-      MapY2, // MapY2 from fac_zone
+      location, dataCenter, assignedTo,
+      ...(zone !== 'N/A' ? [zone] : []),
+      ...(cabinetRow !== 'N/A' ? [cabinetRow] : []),
+      cabinetHeight, u1Position, model, keyLockInfo, maxKW, maxWeight, new Date(dateOfInstallation), notes,
     ];
 
-    db.query(insertQuery, values, (insertErr, results) => {
-      if (insertErr) {
-        console.error('Error inserting cabinet:', insertErr);
-        return res.status(500).json({ error: 'Failed to insert cabinet' });
-      }
+    const [results] = await db.execute(insertQuery, values);
 
-      res.json({ success: true, message: 'Cabinet added successfully', insertedId: results.insertId });
-    });
-  });
+    res.json({ success: true, message: 'Cabinet added successfully', insertedId: results.insertId });
+  } catch (err) {
+    console.error('Error adding cabinet:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 };
 
-//delete cabinet by id
-exports.deleteCabinet = (req, res) => {
+// Delete cabinet
+exports.deleteCabinet = async (req, res) => {
   const cabinetID = req.params.cabinetID;
 
-  if (!cabinetID) {
-    return res.status(400).json({
-      success: false,
-      message: 'Cabinet ID is required',
-    });
-  }
-
-  const deleteQuery = 'DELETE FROM fac_cabinet WHERE CabinetID = ?'; // Adjust table name and column name as needed
-
-  db.query(deleteQuery, [cabinetID], (error, results) => {
-    if (error) {
-      console.error('Error deleting cabinet:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'An error occurred while deleting the cabinet',
-      });
-    }
+  try {
+    const query = 'DELETE FROM fac_cabinet WHERE CabinetID = ?';
+    const [results] = await db.execute(query, [cabinetID]);
 
     if (results.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cabinet not found',
-      });
+      return res.status(404).json({ error: 'Cabinet not found' });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: 'Cabinet deleted successfully',
-    });
-  });
+    res.json({ success: true, message: 'Cabinet deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting cabinet:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 };
+
+

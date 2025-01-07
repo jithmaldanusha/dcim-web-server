@@ -1,13 +1,13 @@
 const db = require('../models/db');
 
-// Fetch all cabinet rows
-exports.getCabinetRows = (req, res) => {
-  const query = 'SELECT Distinct Name FROM fac_cabrow';
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching cabinet rows:', err);
-      return res.status(500).json({ error: 'Failed to fetch cabinet rows' });
-    }
+exports.getCabinetRows = async (req, res) => {
+  const query = 'SELECT DISTINCT Name FROM fac_cabrow';
+
+  try {
+    const [results] = await db.query(query); // Using promise-based query
     res.json(results);
-  });
+  } catch (err) {
+    console.error('Error fetching cabinet rows:', err.message);
+    res.status(500).json({ error: 'Failed to fetch cabinet rows' });
+  }
 };

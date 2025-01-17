@@ -31,26 +31,37 @@ exports.createSuper = async (req, res) => {
 
   try {
     // Step 1: Create the fac_user table if it does not exist
-    const createTableQuery = `
-        CREATE TABLE IF NOT EXISTS fac_user (
-          UserID VARCHAR(255) PRIMARY KEY,
-          Password VARCHAR(255) NOT NULL,
-          Email VARCHAR(255),
-          Role VARCHAR(50) NOT NULL,
-          SessionToken VARCHAR(255)
-        )
-      `;
-    await db.query(createTableQuery);
+    const createUserTableQuery = `
+      CREATE TABLE IF NOT EXISTS fac_user (
+        UserID VARCHAR(255) PRIMARY KEY,
+        Password VARCHAR(255) NOT NULL,
+        Email VARCHAR(255),
+        EmailPass VARCHAR(255),
+        Role VARCHAR(50) NOT NULL,
+        SessionToken VARCHAR(255)
+      )
+    `;
+    await db.query(createUserTableQuery);
 
     // Step 2: Hash the password before saving to the database
     const saltRounds = 11; // Define salt rounds for hashing
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const insertUserQuery = `
-        INSERT INTO fac_user (UserID, Password, Role)
-        VALUES (?, ?, 'Super-Admin')
-      `;
+      INSERT INTO fac_user (UserID, Password, Role)
+      VALUES (?, ?, 'Super-Admin')
+    `;
     await db.query(insertUserQuery, [username, hashedPassword]);
+
+    // Step 3: Create the fac_request table if it does not exist
+    const createRequestTableQuery = `
+      CREATE TABLE IF NOT EXISTS fac_request (
+        RequestID INT AUTO_INCREMENT PRIMARY KEY,
+        DateTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        Status VARCHAR(50)
+      )
+    `;
+    await db.query(createRequestTableQuery);
 
     res.status(201).json({ message: "Super-admin account created successfully." });
   } catch (error) {
@@ -58,6 +69,7 @@ exports.createSuper = async (req, res) => {
     res.status(500).json({ error: "Failed to create super-admin account." });
   }
 };
+
 
 exports.Login = async (req, res) => {
   const { username, password } = req.body;

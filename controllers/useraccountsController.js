@@ -2,7 +2,7 @@ const db = require('../models/db');
 const bcrypt = require('bcrypt');
 
 exports.getUser = async (req, res) => {
-    const userId = req.query.userId;
+    const userId = req.query.userId;  // Use req.query instead of req.params
 
     if (!userId) {
         return res.status(400).json({ error: "User ID is required." });
@@ -10,7 +10,7 @@ exports.getUser = async (req, res) => {
 
     try {
         const [result] = await db.query(
-            "SELECT Email, Role FROM fac_user WHERE UserID = ?",
+            "SELECT Email, Role, EmailPass FROM fac_user WHERE UserID = ?",
             [userId]
         );
 
@@ -18,15 +18,25 @@ exports.getUser = async (req, res) => {
             return res.status(404).json({ error: "User not found." });
         }
 
+        const user = result[0];
+        const emailStatus = user.Email ? user.Email : null;
+        const emailPassStatus = user.EmailPass ? true : null; // If EmailPass is not null, set it to true
+
         res.json({
             message: "User fetched successfully.",
-            data: result[0], // Return the fetched Email and Role
+            data: {
+                UserID: userId,
+                Email: emailStatus,
+                Role: user.Role,
+                EmailPass: emailPassStatus, // Send true if EmailPass exists
+            }
         });
     } catch (err) {
         console.error("Error fetching user:", err);
         res.status(500).json({ error: "An unexpected error occurred." });
     }
 };
+
 
 exports.updateUsername = async (req, res) => {
     const { newUserId, userId } = req.body;
@@ -72,6 +82,30 @@ exports.updateEmail = async (req, res) => {
     }
 };
 
+exports.updateEmailPass = async (req, res) => {
+    const { newUserEmailPass, userId } = req.body;
+
+    if (!newUserEmailPass || !userId) {
+        return res.status(400).json({ error: "User ID and new password are required." });
+    }
+
+    try {
+        const result = await db.query(
+            "UPDATE fac_user SET EmailPass = ? WHERE UserID = ?",
+            [newUserEmailPass, userId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: "User not found." });
+        }
+
+        res.json({ message: "Email password updated successfully." });
+    } catch (err) {
+        console.error("Error updating email password:", err);
+        res.status(500).json({ error: "An unexpected error occurred." });
+    }
+};
+
 exports.updatePassword = async (req, res) => {
     const { currentPassword, newPassword, userId } = req.body;
     console.log(currentPassword, newPassword, userId)
@@ -87,7 +121,6 @@ exports.updatePassword = async (req, res) => {
         }
 
         const user = results[0];
-        console.log(user.Password)
         // Check if the current password matches
         const isPasswordValid = await bcrypt.compare(currentPassword, user.Password);
         if (!isPasswordValid) {

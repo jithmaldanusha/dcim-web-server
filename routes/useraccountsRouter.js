@@ -5,6 +5,7 @@ const userAccountController = require('../controllers/useraccountsController')
 router.get("/", userAccountController.getUser)
 router.post("/update-username", userAccountController.updateUsername);
 router.post("/update-email", userAccountController.updateEmail);
+router.post("/update-emailpass", userAccountController.updateEmailPass);
 router.post("/update-password", userAccountController.updatePassword);
 router.post("/update-role", userAccountController.updateRole);
 

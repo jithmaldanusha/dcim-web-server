@@ -1,4 +1,5 @@
-const db = require('../models/db'); // Updated to use the promise-based db
+const db = require('../models/db');
+const nodemailer = require('nodemailer');
 
 // Fetch all cabinets
 exports.getCabinets = async (req, res) => {
@@ -37,15 +38,18 @@ exports.getCabinetsByDataCenter = async (req, res) => {
 
     const dataCenterID = dataCenterResult[0].DataCenterID;
 
-    const cabinetQuery = `SELECT Location FROM fac_cabinet WHERE DataCenterID = ?`;
+    const cabinetQuery = `SELECT CabinetID, Location FROM fac_cabinet WHERE DataCenterID = ?`;
     const [cabinetResults] = await db.execute(cabinetQuery, [dataCenterID]);
 
     if (cabinetResults.length === 0) {
-      return res.status(404).json({ error: 'Cabinets not found' });
+      return res.status(404).json({ error: 'No cabinets found for this datacenter' });
     }
 
-    const cabinetNames = cabinetResults.map(cabinet => cabinet.Location);
-    res.json(cabinetNames);
+    // Map the results and format them as "CabinetID - Location"
+    const formattedCabinets = cabinetResults.map(cabinet => `${cabinet.CabinetID} - ${cabinet.Location}`);
+
+    // Return the array of formatted cabinet strings
+    res.json(formattedCabinets);
   } catch (err) {
     console.error('Error fetching cabinets:', err.message);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -53,18 +57,16 @@ exports.getCabinetsByDataCenter = async (req, res) => {
 };
 
 // Fetch cabinet by location
-exports.getCabinetByLocation = async (req, res) => {
-  const location = req.params.location;
+exports.getCabinetByID = async (req, res) => {
+  const id = req.params.id;
 
-  if (!location) {
-    return res.status(400).json({ error: 'Location parameter is required' });
+  if (!id) {
+    return res.status(400).json({ error: 'CabinetID is required' });
   }
 
   const query = `
     SELECT
-      fc.CabinetID,
-      fc.Location AS Cabinet,
-      fd.Name AS DataCenter,
+      fc.Location AS Location,
       fdept.Name AS AssignedTo,
       fz.Description AS Zone,
       fcr.Name AS CabinetRow,
@@ -75,20 +77,15 @@ exports.getCabinetByLocation = async (req, res) => {
       fc.MaxKW,
       fc.MaxWeight,
       fc.InstallationDate AS DateOfInstallation,
-      fc.MapX1 As x1,
-      fc.MapX1 As x2,
-      fc.MapY1 As y1,
-      fc.MapY1 As y2,
       fc.Notes
     FROM fac_cabinet fc
-    LEFT JOIN fac_datacenter fd ON fc.DataCenterID = fd.DataCenterID
     LEFT JOIN fac_department fdept ON fc.AssignedTo = fdept.DeptID
     LEFT JOIN fac_zone fz ON fc.ZoneID = fz.ZoneID
     LEFT JOIN fac_cabrow fcr ON fc.CabRowID = fcr.CabRowID
-    WHERE fc.Location = ?
+    WHERE fc.CabinetID = ?
   `;
   try {
-    const [results] = await db.execute(query, [location]);
+    const [results] = await db.execute(query, [id]);
 
     if (results.length === 0) {
       return res.status(404).json({ error: 'Cabinet not found' });
@@ -117,10 +114,6 @@ exports.updateCabinet = async (req, res) => {
     maxKW,
     maxWeight,
     dateOfInstallation,
-    mapX1,
-    mapX2,
-    mapY1,
-    mapY2,
     notes,
   } = req.body;
 
@@ -144,10 +137,6 @@ exports.updateCabinet = async (req, res) => {
     if (maxKW) fields.push('MaxKW = ?'), values.push(maxKW);
     if (maxWeight) fields.push('MaxWeight = ?'), values.push(maxWeight);
     if (dateOfInstallation) fields.push('InstallationDate = ?'), values.push(new Date(dateOfInstallation));
-    if (mapX1) fields.push('MapX1 = ?'), values.push(mapX1);
-    if (mapX2) fields.push('MapX2 = ?'), values.push(mapX2);
-    if (mapY1) fields.push('MapY1 = ?'), values.push(mapY1);
-    if (mapY2) fields.push('MapY2 = ?'), values.push(mapY2);
     if (notes) fields.push('Notes = ?'), values.push(notes);
 
     if (fields.length === 0) {
@@ -243,5 +232,67 @@ exports.deleteCabinet = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+exports.sendAddApprovalEmail = async (req, res) => {
+  const cabinetData = req.body.data;
+  try {
+    // Step 1: Insert a new entry into the fac_request table and get the inserted RequestID
+    const insertRequestQuery = `
+      INSERT INTO fac_request (DateTime, Status)
+      VALUES (NOW(), 'Pending')
+    `;
+    const [result] = await db.query(insertRequestQuery); // Get the insert result
+    const requestID = result.insertId; // Get the auto-incremented RequestID
+
+    // Step 2: Build the approval link dynamically based on the data object
+    const buildQueryString = (data) => {
+      return Object.keys(data)
+        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+        .join('&');
+    };
+
+    const approvalLink = `https://9fa0-112-134-138-15.ngrok-free.app/email/addCabinetWindow?requestID=${requestID}&${buildQueryString(cabinetData)}`;
+
+    // Step 3: Configure the email transport
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.sltidc.lk',
+      port: 587,
+      secure: false,
+      auth: {
+        user: 'dcim_user@sltidc.lk',
+        pass: '=,50,ICireG',
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    // Step 4: Create the email with the requestID and approvalLink
+    const mailOptions = {
+      from: 'dcim_user@sltidc.lk',
+      to: 'dcim_admin@sltidc.lk',
+      subject: `Approval Pending: New Cabinet (Request ID: ${requestID})`,
+      html: `
+        <p>Dear Admin,</p>
+        <p>A new Cabinet is pending approval. Below are the details of the request:</p>
+        <p>Please click the link below to view and approve the request:</p>
+        
+        <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
+        
+        <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
+      `,
+    };
+
+    // Step 5: Send the email
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: 'Approval email sent successfully.', requestID });
+  } catch (error) {
+    console.error('Error sending approval email or updating request:', error.message);
+    res.status(500).json({ error: 'Failed to send approval email or update request.' });
+  }
+};
+
+
 
 

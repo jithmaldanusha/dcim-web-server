@@ -217,7 +217,6 @@ exports.addCabinet = async (req, res) => {
 // Delete cabinet
 exports.deleteCabinet = async (req, res) => {
   const cabinetID = req.params.cabinetID;
-
   try {
     const query = 'DELETE FROM fac_cabinet WHERE CabinetID = ?';
     const [results] = await db.execute(query, [cabinetID]);
@@ -235,42 +234,67 @@ exports.deleteCabinet = async (req, res) => {
 
 exports.sendAddApprovalEmail = async (req, res) => {
   const cabinetData = req.body.data;
+  const userId = req.body.userId; 
+
   try {
-    // Step 1: Insert a new entry into the fac_request table and get the inserted RequestID
+    // Step 1: Fetch the user's email and email password using the userId
+    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const [userResult] = await db.query(emailQuery, [userId]);
+
+    // Step 2: Check if both Email and EmailPass are available
+    if (userResult.length === 0 || !userResult[0].Email || !userResult[0].EmailPass) {
+      return res.status(400).json({ error: "Email or EmailPass not found for the user." });
+    }
+
+    const userEmail = userResult[0].Email;
+    const userPass = userResult[0].EmailPass;
+
+    // Step 3: Fetch the Super-Admin's email from the fac_user table
+    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    const [superAdminResult] = await db.query(superAdminQuery);
+
+    // Step 4: Check if a Super-Admin email is found
+    if (superAdminResult.length === 0 || !superAdminResult[0].Email) {
+      return res.status(400).json({ error: "Reciever email not found." });
+    }
+
+    const superAdminEmail = superAdminResult[0].Email;
+
+    // Step 5: Insert a new entry into the fac_request table and get the inserted RequestID
     const insertRequestQuery = `
       INSERT INTO fac_request (DateTime, Status)
       VALUES (NOW(), 'Pending')
     `;
-    const [result] = await db.query(insertRequestQuery); // Get the insert result
-    const requestID = result.insertId; // Get the auto-incremented RequestID
+    const [result] = await db.query(insertRequestQuery);
+    const requestID = result.insertId;
 
-    // Step 2: Build the approval link dynamically based on the data object
+    // Step 6: Build the approval link dynamically based on the data object
     const buildQueryString = (data) => {
       return Object.keys(data)
         .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
         .join('&');
     };
 
-    const approvalLink = `https://9fa0-112-134-138-15.ngrok-free.app/email/addCabinetWindow?requestID=${requestID}&${buildQueryString(cabinetData)}`;
+    const approvalLink = `https://${process.env.NGROCK}/email/addCabinetWindow?requestID=${requestID}&${buildQueryString(cabinetData)}`;
 
-    // Step 3: Configure the email transport
+    // Step 7: Configure the email transport using the user's email and password
     const transporter = nodemailer.createTransport({
       host: 'smtp.sltidc.lk',
       port: 587,
-      secure: false,
+      secure: false, // Upgrade later with STARTTLS
       auth: {
-        user: 'dcim_user@sltidc.lk',
-        pass: '=,50,ICireG',
+        user: userEmail,  // Use the fetched user's email
+        pass: userPass,   // Use the fetched email password
       },
       tls: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: false, // Allow self-signed certificates
       },
     });
 
-    // Step 4: Create the email with the requestID and approvalLink
+    // Step 8: Create the email with the requestID and approvalLink
     const mailOptions = {
-      from: 'dcim_user@sltidc.lk',
-      to: 'dcim_admin@sltidc.lk',
+      from: userEmail, // The 'From' is set to the fetched user's email
+      to: superAdminEmail, // Email is sent to the Super-Admin's email address
       subject: `Approval Pending: New Cabinet (Request ID: ${requestID})`,
       html: `
         <p>Dear Admin,</p>
@@ -283,13 +307,127 @@ exports.sendAddApprovalEmail = async (req, res) => {
       `,
     };
 
-    // Step 5: Send the email
+    // Step 9: Send the email
     await transporter.sendMail(mailOptions);
 
     res.status(200).json({ message: 'Approval email sent successfully.', requestID });
   } catch (error) {
     console.error('Error sending approval email or updating request:', error.message);
     res.status(500).json({ error: 'Failed to send approval email or update request.' });
+  }
+};
+
+
+exports.sendDeleteApprovalEmail = async (req, res) => {
+  const { cabinetID } = req.body; // Extract the cabinetID from the request body
+  const userId = req.body.userId; // Extract the userId for fetching the user's email
+
+  try {
+    // Step 1: Fetch the user's email and email password using the userId
+    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const [userResult] = await db.query(emailQuery, [userId]);
+
+    // Step 2: Check if both Email and EmailPass are available
+    if (userResult.length === 0 || !userResult[0].Email || !userResult[0].EmailPass) {
+      return res.status(400).json({ error: "Email or EmailPass not found for the user." });
+    }
+
+    const userEmail = userResult[0].Email;
+    const userPass = userResult[0].EmailPass;
+
+    // Step 3: Fetch the Super-Admin's email from the fac_user table
+    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    const [superAdminResult] = await db.query(superAdminQuery);
+
+    // Step 4: Check if a Super-Admin email is found
+    if (superAdminResult.length === 0 || !superAdminResult[0].Email) {
+      return res.status(400).json({ error: "Receiver email not found." });
+    }
+
+    const superAdminEmail = superAdminResult[0].Email;
+
+    // Step 5: Fetch the Location from fac_cabinet and the DataCenterID
+    const cabinetQuery = `SELECT Location, DataCenterID FROM fac_cabinet WHERE CabinetID = ?`;
+    const [cabinetResult] = await db.query(cabinetQuery, [cabinetID]);
+
+    // Step 6: Check if the cabinet data is available
+    if (cabinetResult.length === 0) {
+      return res.status(400).json({ error: "Cabinet not found." });
+    }
+
+    const { Location, DataCenterID } = cabinetResult[0];
+
+    // Step 7: Fetch the DataCenter Name using the DataCenterID
+    const dataCenterQuery = `SELECT Name FROM fac_datacenter WHERE DataCenterID = ?`;
+    const [dataCenterResult] = await db.query(dataCenterQuery, [DataCenterID]);
+
+    // Step 8: Check if the DataCenter Name is available
+    if (dataCenterResult.length === 0 || !dataCenterResult[0].Name) {
+      return res.status(400).json({ error: "Data center not found." });
+    }
+
+    const dataCenterName = dataCenterResult[0].Name;
+
+    // Step 9: Create the data object with Location and DataCenter Name
+    const data = {
+      location: Location,
+      datacenter: dataCenterName,
+    };
+
+    // Step 10: Insert a new entry into the fac_request table for cabinet deletion and get the inserted RequestID
+    const insertRequestQuery = `
+      INSERT INTO fac_request (DateTime, Status)
+      VALUES (NOW(), 'Pending')
+    `;
+    const [result] = await db.query(insertRequestQuery);
+    const requestID = result.insertId;
+
+    // Step 11: Build the approval link dynamically based on the cabinetID and data
+    const buildQueryString = (data) => {
+      return Object.keys(data)
+        .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+        .join('&');
+    };
+
+    const approvalLink = `https://${process.env.NGROCK}/email/deleteCabinetWindow?requestID=${requestID}&cabinetID=${cabinetID}&${buildQueryString(data)}`;
+    // Step 12: Configure the email transport using the user's email and password
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.sltidc.lk',
+      port: 587,
+      secure: false, // Upgrade later with STARTTLS
+      auth: {
+        user: userEmail,  // Use the fetched user's email
+        pass: userPass,   // Use the fetched email password
+      },
+      tls: {
+        rejectUnauthorized: false, // Allow self-signed certificates
+      },
+    });
+
+    // Step 13: Create the email with the requestID, cabinetID, and approvalLink
+    const mailOptions = {
+      from: userEmail, // The 'From' is set to the fetched user's email
+      to: superAdminEmail, // Email is sent to the Super-Admin's email address
+      subject: `Approval Pending: Delete Cabinet (Request ID: ${requestID})`,
+      html: `
+        <p>Dear Admin,</p>
+        <p>A request to delete a Cabinet is pending approval. Below are the details of the request:</p>
+
+        <p>Please click the link below to view and approve the request:</p>
+        
+        <a href="${approvalLink}" style="padding: 10px 20px; background-color: red; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
+        
+        <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
+      `,
+    };
+
+    // Step 14: Send the email
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: 'Delete approval email sent successfully.', requestID });
+  } catch (error) {
+    console.error('Error sending delete approval email or updating request:', error.message);
+    res.status(500).json({ error: 'Failed to send delete approval email or update request.' });
   }
 };
 

@@ -11,5 +11,6 @@ router.post('/addCabinet', cabinetController.addCabinet);
 router.delete('/deleteCabinet/:cabinetID', cabinetController.deleteCabinet);
 
 router.post('/requestAddApproval', cabinetController.sendAddApprovalEmail);
+router.post('/requestDeleteApproval', cabinetController.sendDeleteApprovalEmail);
 
 module.exports = router;

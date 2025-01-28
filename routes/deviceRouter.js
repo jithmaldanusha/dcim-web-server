@@ -14,6 +14,6 @@ router.delete('/deleteDevice/:deviceID', deviceController.deleteDevice);
 router.post('/bulkImport', deviceController.bulkImportDevices);
 router.post('/bulkDeviceApproval', deviceController.sendBulkDeviceApprovalEmail);
 router.post('/deviceAddApproval', deviceController.sendDeviceAddApprovalEmail);
-router.post('/deviceUpdateApproval', deviceController.sendDeviceUpdateApprovalEmail);
+router.post('/deviceRemoveApproval', deviceController.sendDeviceDeleteApprovalEmail);
 
 module.exports = router;

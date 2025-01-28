@@ -3,6 +3,7 @@ const router = express.Router();
 const userAccountController = require('../controllers/useraccountsController')
 
 router.get("/", userAccountController.getUser)
+router.get("/checkEmail/:userId", userAccountController.checkEmail)
 router.post("/update-username", userAccountController.updateUsername);
 router.post("/update-email", userAccountController.updateEmail);
 router.post("/update-emailpass", userAccountController.updateEmailPass);

@@ -40,3 +40,41 @@ exports.updateRequestStatus = async (req, res) => {
         res.status(500).json({ success: false, error: 'Server error' });
     }
 };
+
+exports.getPendingRequests = async (req, res) => {
+    try {
+        // Query the database to get all columns from fac_request where Status is "Pending"
+        const query = 'SELECT * FROM fac_request WHERE Status = "Pending"';
+        const [result] = await db.query(query);
+
+        if (result.length > 0) {
+            // If records exist, send them in the response
+            res.status(200).json(result);
+        } else {
+            // If no records are found, send a 404 response
+            res.status(404).json({ error: 'No pending requests found' });
+        }
+    } catch (error) {
+        console.error('Error checking request status:', error.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+};
+
+exports.getRejectedRequests = async (req, res) => {
+    try {
+        // Query the database to get all columns from fac_request where Status is "Pending"
+        const query = 'SELECT * FROM fac_request WHERE Status = "Rejected"';
+        const [result] = await db.query(query);
+
+        if (result.length > 0) {
+            // If records exist, send them in the response
+            res.status(200).json(result);
+        } else {
+            // If no records are found, send a 404 response
+            res.status(404).json({ error: 'No pending requests found' });
+        }
+    } catch (error) {
+        console.error('Error checking request status:', error.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+};

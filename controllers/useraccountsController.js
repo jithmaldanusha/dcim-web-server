@@ -37,7 +37,6 @@ exports.getUser = async (req, res) => {
     }
 };
 
-
 exports.updateUsername = async (req, res) => {
     const { newUserId, userId } = req.body;
 
@@ -56,6 +55,27 @@ exports.updateUsername = async (req, res) => {
         res.json({ message: "Username updated successfully." });
     } catch (error) {
         console.error("Error updating username:", error);
+        res.status(500).json({ error: "An unexpected error occurred." });
+    }
+};
+
+exports.checkEmail = async (req, res) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+        return res.status(400).json({ error: "UserId is required." });
+    }
+
+    try {
+        const result = await db.query("SELECT Email FROM fac_user WHERE UserID = ?", [
+            userId,
+        ]);
+        if (result.length === 0) {
+            return res.status(404).json({ error: "Email not found." });
+        }
+        res.json({ Email: result[0] });
+    } catch (error) {
+        console.error("Error fetching email:", error);
         res.status(500).json({ error: "An unexpected error occurred." });
     }
 };

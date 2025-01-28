@@ -192,10 +192,9 @@ exports.updateDevice = async (req, res) => {
     }
 };
 
-
 exports.addDevice = async (req, res) => {
     const connection = await db.getConnection();
-    const device = req.body;  // Assuming the device data is directly passed in the request body
+    const device = req.body;
 
     try {
         // 1. Get Owner (DeptID) from fac_department
@@ -203,6 +202,7 @@ exports.addDevice = async (req, res) => {
             'SELECT DeptID FROM fac_department WHERE Name = ?',
             [device.owner]
         );
+
         if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
         const ownerDeptID = deptResult[0].DeptID;
 
@@ -339,10 +339,13 @@ exports.bulkImportDevices = async (req, res) => {
             if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
             const dataCenterID = dataCenterResult[0].DataCenterID;
 
+            const cabinetLocation = device.cabinet.split(' - ')[1] || device.cabinet;
+
             const [cabinetResult] = await connection.query(
                 `SELECT CabinetID FROM fac_cabinet WHERE Location = ? AND DataCenterID = ?`,
-                [device.cabinet, dataCenterID]
+                [cabinetLocation, dataCenterID] // Use the extracted 'R01.16' value
             );
+
             if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.cabinet} in data center: ${device.dataCenter}`);
             const cabinetID = cabinetResult[0].CabinetID;
 
@@ -405,19 +408,40 @@ exports.bulkImportDevices = async (req, res) => {
 };
 
 exports.sendBulkDeviceApprovalEmail = async (req, res) => {
-    const deviceData = req.body.data; // deviceData is an array of device objects
-    console.log(deviceData);
+    const deviceData = req.body.data;
+    const userId = req.body.userId;
 
+    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const [userResult] = await db.query(emailQuery, [userId]);
+
+    // Step 2: Check if both Email and EmailPass are available
+    if (userResult.length === 0 || !userResult[0].Email || !userResult[0].EmailPass) {
+        return res.status(400).json({ error: "Email not set for the user." });
+    }
+
+    const userEmail = userResult[0].Email;
+    const userPass = userResult[0].EmailPass;
+
+    // Step 3: Fetch the Super-Admin's email from the fac_user table
+    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    const [superAdminResult] = await db.query(superAdminQuery);
+
+    // Step 4: Check if a Super-Admin email is found
+    if (superAdminResult.length === 0 || !superAdminResult[0].Email) {
+        return res.status(400).json({ error: "Reciever email not found." });
+    }
+
+    const superAdminEmail = superAdminResult[0].Email;
     try {
         // Step 1: Insert a new entry into the fac_request table and get the inserted RequestID
         const insertRequestQuery = `
-        INSERT INTO fac_request (DateTime, Status)
-        VALUES (NOW(), 'Pending')
-      `;
+            INSERT INTO fac_request (DateTime, Status)
+            VALUES (NOW(), 'Pending')
+        `;
         const [result] = await db.query(insertRequestQuery); // Get the insert result
         const requestID = result.insertId; // Get the auto-incremented RequestID
 
-        // Step 2: Build the approval link dynamically based on the array of data objects
+        // Step 2: Build the approval link dynamically based on the array of device objects
         const buildQueryString = (devices) => {
             return devices.map((device, index) => {
                 return Object.keys(device)
@@ -426,16 +450,17 @@ exports.sendBulkDeviceApprovalEmail = async (req, res) => {
             }).join('&');
         };
 
-        const approvalLink = `https://9fa0-112-134-138-15.ngrok-free.app/email/bulkImportDevicesWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
-        console.log('Approval link:', approvalLink);
+        //process.env.DB_HOST
+        const approvalLink = `https://${process.env.NGROCK}/email/bulkImportDevicesWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
+
         // Step 3: Configure the email transport
         const transporter = nodemailer.createTransport({
             host: 'smtp.sltidc.lk',
             port: 587,
             secure: false,
             auth: {
-                user: 'dcim_user@sltidc.lk',
-                pass: '=,50,ICireG',
+                user: userEmail,
+                pass: userPass,
             },
             tls: {
                 rejectUnauthorized: false,
@@ -444,18 +469,16 @@ exports.sendBulkDeviceApprovalEmail = async (req, res) => {
 
         // Step 4: Create the email with the requestID and approvalLink
         const mailOptions = {
-            from: 'dcim_user@sltidc.lk',
-            to: 'dcim_admin@sltidc.lk',
+            from: userEmail,
+            to: superAdminEmail,
             subject: `Approval Pending: Bulk Device Import (Request ID: ${requestID})`,
             html: `
-          <p>Dear Admin,</p>
-          <p>A new bulk of devices pending approval. Below are the details of the request:</p>
-          <p>Please click the link below to view and approve the request:</p>
-          
-          <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
-          
-          <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
-        `,
+                <p>Dear Admin,</p>
+                <p>A new bulk of devices is pending approval. Below are the details of the request:</p>
+                <p>Please click the link below to view and approve the request:</p>
+                <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
+                <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
+            `,
         };
 
         // Step 5: Send the email
@@ -468,126 +491,211 @@ exports.sendBulkDeviceApprovalEmail = async (req, res) => {
     }
 };
 
-exports.sendDeviceAddApprovalEmail = async (req, res) => {
-    const device = req.body.data;
-    const approvalLink = 'https://yourapp.com/approve-request'; // Replace with your actual approval route
-    const rejectionLink = 'https://yourapp.com/reject-request'; // Replace with your actual rejection route
 
+exports.sendDeviceAddApprovalEmail = async (req, res) => {
+    const deviceData = req.body.data;
+    const userId = req.body.userId;
+
+    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const [userResult] = await db.query(emailQuery, [userId]);
+
+    // Step 2: Check if both Email and EmailPass are available
+    if (userResult.length === 0 || !userResult[0].Email || !userResult[0].EmailPass) {
+        return res.status(400).json({ error: "Email not set for the user." });
+    }
+
+    const userEmail = userResult[0].Email;
+    const userPass = userResult[0].EmailPass;
+
+    // Step 3: Fetch the Super-Admin's email from the fac_user table
+    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    const [superAdminResult] = await db.query(superAdminQuery);
+
+    // Step 4: Check if a Super-Admin email is found
+    if (superAdminResult.length === 0 || !superAdminResult[0].Email) {
+        return res.status(400).json({ error: "Reciever email not found." });
+    }
+
+    const superAdminEmail = superAdminResult[0].Email;
     try {
+        // Step 1: Insert a new entry into the fac_request table and get the inserted RequestID
+        const insertRequestQuery = `
+            INSERT INTO fac_request (DateTime, Status)
+            VALUES (NOW(), 'Pending')
+        `;
+        const [result] = await db.query(insertRequestQuery); // Get the insert result
+        const requestID = result.insertId; // Get the auto-incremented RequestID
+
+        // Step 2: Build the approval link dynamically based on the array of device objects
+        const buildQueryString = (data) => {
+            return Object.keys(data)
+                .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+                .join('&');
+        };
+
+        //process.env.DB_HOST
+        const approvalLink = `https://${process.env.NGROCK}/email/addNewDeviceWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
+
+        // Step 3: Configure the email transport
         const transporter = nodemailer.createTransport({
-            host: 'smtp.sltidc.lk', // Replace with your domain's SMTP server
-            port: 587, // Usually 587 for TLS or 465 for SSL
-            secure: false, // Set to true if using port 465 with SSL
+            host: 'smtp.sltidc.lk',
+            port: 587,
+            secure: false,
             auth: {
-                user: 'dcim_user@sltidc.lk', // Replace with your email address on your domain
-                pass: '=,50,ICireG' // Use the email account's password
+                user: userEmail,
+                pass: userPass,
             },
             tls: {
-                rejectUnauthorized: false // Only use this if you encounter certificate issues
-            }
+                rejectUnauthorized: false,
+            },
         });
 
-        // Construct email content with approval and rejection buttons
+        // Step 4: Create the email with the requestID and approvalLink
         const mailOptions = {
-            from: 'dcim_user@sltidc.lk',
-            to: 'dcim_admin@sltidc.lk', // Replace with recipient's email
-            subject: 'Device Approval Request',
+            from: userEmail,
+            to: superAdminEmail,
+            subject: `Approval Pending: New Device (Request ID: ${requestID})`,
             html: `
                 <p>Dear Admin,</p>
-                <p>A request for device approval has been submitted with the following details:</p>
-                <table border="1" cellpadding="5" cellspacing="0">
-                    <thead>
-                        <tr>
-                            <th>Data Center</th>
-                            <th>Location</th>
-                            <th>Label</th>
-                            <th>Owner</th>
-                            <th>Install Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>${device.dataCenter}</td>
-                            <td>${device.location}</td>
-                            <td>${device.label}</td>
-                            <td>${device.owner}</td>
-                            <td>${device.installDate}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <p>Please click one of the buttons below to approve or reject the request:</p>
-                <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Approve</a>
-                <a href="${rejectionLink}" style="padding: 10px 20px; background-color: red; color: white; text-decoration: none; border-radius: 5px; margin-left: 10px;">Reject</a>
-                <p>Best regards,<br>DCIM</p>
-            `
+                <p>A new Device is pending approval. Below are the details of the request:</p>
+                <p>Please click the link below to view and approve the request:</p>
+                <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
+                <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
+            `,
         };
 
-        // Send the email
+        // Step 5: Send the email
         await transporter.sendMail(mailOptions);
 
-        res.status(200).json({ message: 'Approval email sent successfully' });
+        res.status(200).json({ message: 'Approval email sent successfully.', requestID });
     } catch (error) {
-        console.error('Error sending approval email:', error.message);
-        res.status(500).json({ error: 'Failed to send approval email' });
+        console.error('Error sending approval email or updating request:', error.message);
+        res.status(500).json({ error: 'Failed to send approval email or update request.' });
     }
 };
 
-exports.sendDeviceUpdateApprovalEmail = async (req, res) => {
-    const device = req.body.data;
-    const approvalLink = 'https://yourapp.com/approve-request'; // Replace with your actual approval route
-    const rejectionLink = 'https://yourapp.com/reject-request'; // Replace with your actual rejection route
+exports.sendDeviceDeleteApprovalEmail = async (req, res) => {
+    const { deviceId } = req.body;
+    const userId = req.body.userId;
+
+    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const [userResult] = await db.query(emailQuery, [userId]);
+
+    // Step 2: Check if both Email and EmailPass are available
+    if (userResult.length === 0 || !userResult[0].Email || !userResult[0].EmailPass) {
+        return res.status(400).json({ error: "Email not set for the user." });
+    }
+
+    const userEmail = userResult[0].Email;
+    const userPass = userResult[0].EmailPass;
+
+    // Step 3: Fetch the Super-Admin's email from the fac_user table
+    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    const [superAdminResult] = await db.query(superAdminQuery);
+
+    // Step 4: Check if a Super-Admin email is found
+    if (superAdminResult.length === 0 || !superAdminResult[0].Email) {
+        return res.status(400).json({ error: "Receiver email not found." });
+    }
+
+    const superAdminEmail = superAdminResult[0].Email;
 
     try {
-        // Configure the transporter for sending emails using nodemailer
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: 'jithmaldanusha@gmail.com',
-                pass: 'mgvv leus gcsa hvib' // Use environment variables for security
-            }
-        });
+        // Step 1: Fetch the device details using the deviceId
+        const deviceQuery = `SELECT Label, Position, Cabinet, DeviceType FROM fac_device WHERE DeviceID = ?`;
+        const [deviceResult] = await db.query(deviceQuery, [deviceId]);
 
-        // Construct email content with approval and rejection buttons
-        const mailOptions = {
-            from: 'jithmaldanusha@gmail.com',
-            to: 'danushajithmal@gmail.com', // Replace with recipient's email
-            subject: 'Device Approval Request',
-            html: `
-                <p>Dear Admin,</p>
-                <p>A request for device approval has been submitted with the following details:</p>
-                <table border="1" cellpadding="5" cellspacing="0">
-                    <thead>
-                        <tr>
-                            <th>Data Center</th>
-                            <th>Location</th>
-                            <th>Label</th>
-                            <th>Owner</th>
-                            <th>Install Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>${device.dataCenter}</td>
-                            <td>${device.location}</td>
-                            <td>${device.label}</td>
-                            <td>${device.owner}</td>
-                            <td>${device.installDate}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <p>Please click one of the buttons below to approve or reject the request:</p>
-                <a href="${approvalLink}" style="padding: 10px 20px; background-color: green; color: white; text-decoration: none; border-radius: 5px;">Approve</a>
-                <a href="${rejectionLink}" style="padding: 10px 20px; background-color: red; color: white; text-decoration: none; border-radius: 5px; margin-left: 10px;">Reject</a>
-                <p>Best regards,<br>DCIM</p>
-            `
+        // Step 2: Check if the device is found
+        if (deviceResult.length === 0) {
+            return res.status(404).json({ error: 'Device not found' });
+        }
+
+        const { Label, Position, Cabinet, DeviceType } = deviceResult[0];
+
+        // Step 3: Fetch the DataCenterID and Location from the fac_cabinet table using the Cabinet ID
+        const cabinetQuery = `SELECT DataCenterID, Location FROM fac_cabinet WHERE CabinetID = ?`;
+        const [cabinetResult] = await db.query(cabinetQuery, [Cabinet]);
+
+        // Step 4: Check if the cabinet is found and the DataCenterID exists
+        if (cabinetResult.length === 0 || !cabinetResult[0].DataCenterID || !cabinetResult[0].Location) {
+            return res.status(404).json({ error: 'Cabinet not found or DataCenterID/Location missing' });
+        }
+
+        const { DataCenterID, Location: cabinetLocation } = cabinetResult[0];
+
+        // Step 5: Fetch the DataCenter Name from the fac_datacenter table using the DataCenterID
+        const dataCenterQuery = `SELECT Name FROM fac_datacenter WHERE DataCenterID = ?`;
+        const [dataCenterResult] = await db.query(dataCenterQuery, [DataCenterID]);
+
+        // Step 6: Check if the data center is found
+        if (dataCenterResult.length === 0 || !dataCenterResult[0].Name) {
+            return res.status(404).json({ error: 'Data center not found' });
+        }
+
+        const { Name: dataCenterName } = dataCenterResult[0];
+
+        // Step 7: Create the data object with required fields
+        const data = {
+            datacenter: dataCenterName,
+            cabinet: cabinetLocation, // Assigning the Location to the cabinet field
+            label: Label,  // or you can use other relevant info from the device query
+            position: Position,
+            devicetype: DeviceType,
         };
 
-        // Send the email
+        // Step 8: Insert a new entry into the fac_request table and get the inserted RequestID
+        const insertRequestQuery = `
+            INSERT INTO fac_request (DateTime, Status)
+            VALUES (NOW(), 'Pending')
+        `;
+        const [result] = await db.query(insertRequestQuery); // Get the insert result
+        const requestID = result.insertId; // Get the auto-incremented RequestID
+
+        // Step 9: Build the approval link dynamically based on the device data
+        const buildQueryString = (data) => {
+            return Object.keys(data)
+                .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(data[key])}`)
+                .join('&');
+        };
+
+        // Use the requestID and data object in the approval link
+        const approvalLink = `https://${process.env.NGROCK}/email/deleteDeviceWindow?requestID=${requestID}&deviceId=${deviceId}&${buildQueryString(data)}`;
+
+        // Step 10: Configure the email transport
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.sltidc.lk',
+            port: 587,
+            secure: false,
+            auth: {
+                user: userEmail,
+                pass: userPass,
+            },
+            tls: {
+                rejectUnauthorized: false,
+            },
+        });
+
+        // Step 11: Create the email with the requestID and approvalLink
+        const mailOptions = {
+            from: userEmail,
+            to: superAdminEmail,
+            subject: `Approval Pending: Device Deletion (Request ID: ${requestID})`,
+            html: `
+                <p>Dear Admin,</p>
+                <p>A request to delete a device is pending approval. Below are the details of the request:</p>
+                <p>Please click the link below to view and approve the request:</p>
+                <a href="${approvalLink}" style="padding: 10px 20px; background-color: red; color: white; text-decoration: none; border-radius: 5px;">Click here to view the request</a>
+                <p style="margin-top: 20px">Best regards,<br>DCIM Team</p>
+            `,
+        };
+
+        // Step 12: Send the email
         await transporter.sendMail(mailOptions);
 
-        res.status(200).json({ message: 'Approval email sent successfully' });
+        res.status(200).json({ message: 'Approval email sent successfully.', requestID });
     } catch (error) {
-        console.error('Error sending approval email:', error.message);
-        res.status(500).json({ error: 'Failed to send approval email' });
+        console.error('Error sending approval email or updating request:', error.message);
+        res.status(500).json({ error: 'Failed to send approval email or update request.' });
     }
 };
+

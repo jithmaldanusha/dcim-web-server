@@ -13,7 +13,7 @@ app.use(express.json());
 const sessionRoutes = require('../routes/sessionRoutes');
 const userAccountRoutes = require('../routes/useraccountsRouter');
 const cabinetRoutes = require('../routes/cabinetRoutes');
-const dataCenterRoutes = require('../routes/dataCenterRoutes');
+const dataCenterRoutes = require('../routes/datacenterRoutes');
 const departmentRoutes = require('../routes/departmentRoutes');
 const zoneRoutes = require('../routes/zoneRoutes');
 const cabinetRowRoutes = require('../routes/cabinetrowsRoutes');

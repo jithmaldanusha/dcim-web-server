@@ -451,7 +451,7 @@ exports.sendBulkDeviceApprovalEmail = async (req, res) => {
         };
 
         //process.env.DB_HOST
-        const approvalLink = `https://${process.env.NGROCK}/email/bulkImportDevicesWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
+        const approvalLink = `https://${process.env.DB_HOST}/email/bulkImportDevicesWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
 
         // Step 3: Configure the email transport
         const transporter = nodemailer.createTransport({
@@ -534,7 +534,7 @@ exports.sendDeviceAddApprovalEmail = async (req, res) => {
         };
 
         //process.env.DB_HOST
-        const approvalLink = `https://${process.env.NGROCK}/email/addNewDeviceWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
+        const approvalLink = `https://${process.env.DB_HOST}/email/addNewDeviceWindow?requestID=${requestID}&${buildQueryString(deviceData)}`;
 
         // Step 3: Configure the email transport
         const transporter = nodemailer.createTransport({
@@ -659,7 +659,7 @@ exports.sendDeviceDeleteApprovalEmail = async (req, res) => {
         };
 
         // Use the requestID and data object in the approval link
-        const approvalLink = `https://${process.env.NGROCK}/email/deleteDeviceWindow?requestID=${requestID}&deviceId=${deviceId}&${buildQueryString(data)}`;
+        const approvalLink = `https://${process.env.DB_HOST}/email/deleteDeviceWindow?requestID=${requestID}&deviceId=${deviceId}&${buildQueryString(data)}`;
 
         // Step 10: Configure the email transport
         const transporter = nodemailer.createTransport({

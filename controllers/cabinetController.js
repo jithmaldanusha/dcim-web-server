@@ -8,8 +8,8 @@ exports.getCabinets = async (req, res) => {
       c.CabinetID, 
       c.Location, 
       d.Name AS DataCenterName
-    FROM fac_cabinet c
-    JOIN fac_datacenter d ON c.DataCenterID = d.DataCenterID;
+    FROM fac_Cabinet c
+    JOIN fac_DataCenter d ON c.DataCenterID = d.DataCenterID;
   `;
   try {
     const [results] = await db.execute(query);
@@ -29,7 +29,7 @@ exports.getCabinetsByDataCenter = async (req, res) => {
   }
 
   try {
-    const dataCenterQuery = `SELECT DataCenterID FROM fac_datacenter WHERE Name = ?`;
+    const dataCenterQuery = `SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?`;
     const [dataCenterResult] = await db.execute(dataCenterQuery, [datacenterName]);
 
     if (dataCenterResult.length === 0) {
@@ -38,7 +38,7 @@ exports.getCabinetsByDataCenter = async (req, res) => {
 
     const dataCenterID = dataCenterResult[0].DataCenterID;
 
-    const cabinetQuery = `SELECT CabinetID, Location FROM fac_cabinet WHERE DataCenterID = ?`;
+    const cabinetQuery = `SELECT CabinetID, Location FROM fac_Cabinet WHERE DataCenterID = ?`;
     const [cabinetResults] = await db.execute(cabinetQuery, [dataCenterID]);
 
     if (cabinetResults.length === 0) {
@@ -78,10 +78,10 @@ exports.getCabinetByID = async (req, res) => {
       fc.MaxWeight,
       fc.InstallationDate AS DateOfInstallation,
       fc.Notes
-    FROM fac_cabinet fc
-    LEFT JOIN fac_department fdept ON fc.AssignedTo = fdept.DeptID
-    LEFT JOIN fac_zone fz ON fc.ZoneID = fz.ZoneID
-    LEFT JOIN fac_cabrow fcr ON fc.CabRowID = fcr.CabRowID
+    FROM fac_Cabinet fc
+    LEFT JOIN fac_Department fdept ON fc.AssignedTo = fdept.DeptID
+    LEFT JOIN fac_Zone fz ON fc.ZoneID = fz.ZoneID
+    LEFT JOIN fac_CabRow fcr ON fc.CabRowID = fcr.CabRowID
     WHERE fc.CabinetID = ?
   `;
   try {
@@ -126,10 +126,10 @@ exports.updateCabinet = async (req, res) => {
     const values = [];
 
     if (location) fields.push('Location = ?'), values.push(location);
-    if (dataCenter) fields.push('DataCenterID = (SELECT DataCenterID FROM fac_datacenter WHERE Name = ? LIMIT 1)'), values.push(dataCenter);
-    if (assignedTo) fields.push('AssignedTo = (SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1)'), values.push(assignedTo);
-    if (zone) fields.push('ZoneID = (SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1)'), values.push(zone);
-    if (cabinetRow) fields.push('CabRowID = (SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1)'), values.push(cabinetRow);
+    if (dataCenter) fields.push('DataCenterID = (SELECT DataCenterID FROM fac_DataCenter WHERE Name = ? LIMIT 1)'), values.push(dataCenter);
+    if (assignedTo) fields.push('AssignedTo = (SELECT DeptID FROM fac_Department WHERE Name = ? LIMIT 1)'), values.push(assignedTo);
+    if (zone) fields.push('ZoneID = (SELECT ZoneID FROM fac_Zone WHERE Description = ? LIMIT 1)'), values.push(zone);
+    if (cabinetRow) fields.push('CabRowID = (SELECT CabRowID FROM fac_CabRow WHERE Name = ? LIMIT 1)'), values.push(cabinetRow);
     if (cabinetHeight) fields.push('CabinetHeight = ?'), values.push(cabinetHeight);
     if (u1Position) fields.push('U1Position = ?'), values.push(u1Position);
     if (model) fields.push('Model = ?'), values.push(model);
@@ -144,7 +144,7 @@ exports.updateCabinet = async (req, res) => {
     }
 
     const query = `
-      UPDATE fac_cabinet
+      UPDATE fac_Cabinet
       SET ${fields.join(', ')}
       WHERE CabinetID = ?
     `;
@@ -183,18 +183,18 @@ exports.addCabinet = async (req, res) => {
 
   try {
     // Check if zone or cabinetRow is "N/A" and assign 0, otherwise use the subquery for the actual value
-    const zoneQuery = zone === 'N/A' ? '0' : `(SELECT ZoneID FROM fac_zone WHERE Description = ? LIMIT 1)`;
-    const cabinetRowQuery = cabinetRow === 'N/A' ? '0' : `(SELECT CabRowID FROM fac_cabrow WHERE Name = ? LIMIT 1)`;
+    const zoneQuery = zone === 'N/A' ? '0' : `(SELECT ZoneID FROM fac_Zone WHERE Description = ? LIMIT 1)`;
+    const cabinetRowQuery = cabinetRow === 'N/A' ? '0' : `(SELECT CabRowID FROM fac_CabRow WHERE Name = ? LIMIT 1)`;
 
     const insertQuery = `
-      INSERT INTO fac_cabinet (
+      INSERT INTO fac_Cabinet (
         Location, DataCenterID, AssignedTo, ZoneID, CabRowID, CabinetHeight, 
         U1Position, Model, Keylock, MaxKW, MaxWeight, InstallationDate, Notes, MapX1, MapX2, MapY1, MapY2
       ) 
       VALUES (
         ?, 
-        (SELECT DataCenterID FROM fac_datacenter WHERE Name = ? LIMIT 1), 
-        (SELECT DeptID FROM fac_department WHERE Name = ? LIMIT 1), 
+        (SELECT DataCenterID FROM fac_DataCenter WHERE Name = ? LIMIT 1), 
+        (SELECT DeptID FROM fac_Department WHERE Name = ? LIMIT 1), 
         ${zoneQuery}, ${cabinetRowQuery}, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0
       );`;
 
@@ -218,7 +218,7 @@ exports.addCabinet = async (req, res) => {
 exports.deleteCabinet = async (req, res) => {
   const cabinetID = req.params.cabinetID;
   try {
-    const query = 'DELETE FROM fac_cabinet WHERE CabinetID = ?';
+    const query = 'DELETE FROM fac_Cabinet WHERE CabinetID = ?';
     const [results] = await db.execute(query, [cabinetID]);
 
     if (results.affectedRows === 0) {
@@ -346,8 +346,8 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
 
     const superAdminEmail = superAdminResult[0].Email;
 
-    // Step 5: Fetch the Location from fac_cabinet and the DataCenterID
-    const cabinetQuery = `SELECT Location, DataCenterID FROM fac_cabinet WHERE CabinetID = ?`;
+    // Step 5: Fetch the Location from fac_Cabinet and the DataCenterID
+    const cabinetQuery = `SELECT Location, DataCenterID FROM fac_Cabinet WHERE CabinetID = ?`;
     const [cabinetResult] = await db.query(cabinetQuery, [cabinetID]);
 
     // Step 6: Check if the cabinet data is available
@@ -358,7 +358,7 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
     const { Location, DataCenterID } = cabinetResult[0];
 
     // Step 7: Fetch the DataCenter Name using the DataCenterID
-    const dataCenterQuery = `SELECT Name FROM fac_datacenter WHERE DataCenterID = ?`;
+    const dataCenterQuery = `SELECT Name FROM fac_DataCenter WHERE DataCenterID = ?`;
     const [dataCenterResult] = await db.query(dataCenterQuery, [DataCenterID]);
 
     // Step 8: Check if the DataCenter Name is available

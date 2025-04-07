@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all data centers
 exports.getDataManufacturers = async (req, res) => {
-  const query = 'SELECT Distinct Name FROM fac_manufacturer';
+  const query = 'SELECT Distinct Name FROM fac_Manufacturer';
 
   try {
     const [results] = await db.query(query);

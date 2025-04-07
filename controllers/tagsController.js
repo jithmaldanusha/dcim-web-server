@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all tags
 exports.getTags = async (req, res) => {
-  const query = 'SELECT Name FROM fac_tags';
+  const query = 'SELECT Name FROM fac_Tags';
 
   try {
     const [results] = await db.query(query); // Using promise-based query

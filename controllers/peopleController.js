@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all departments
 exports.getPrimaryContacts = async (req, res) => {
-  const query = 'SELECT UserID, LastName FROM fac_people';
+  const query = 'SELECT UserID, LastName FROM fac_People';
 
   try {
     const [results] = await db.query(query);

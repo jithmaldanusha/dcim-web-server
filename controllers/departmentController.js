@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all departments
 exports.getDepartments = async (req, res) => {
-  const query = 'SELECT DISTINCT Name FROM fac_department';
+  const query = 'SELECT DISTINCT Name FROM fac_Department';
 
   try {
     const [results] = await db.query(query); // Using promise-based query

@@ -11,7 +11,7 @@ exports.approveImport = async (req, res) => {
     // If approved, insert the data into the database
     try {
         for (const device of importRequest.data) {
-            await db.query('INSERT INTO fac_device SET ?', device);
+            await db.query('INSERT INTO fac_Device SET ?', device);
         }
 
         // Send a confirmation email to the user who made the request

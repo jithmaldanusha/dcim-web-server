@@ -238,7 +238,7 @@ exports.sendAddApprovalEmail = async (req, res) => {
 
   try {
     // Step 1: Fetch the user's email and email password using the userId
-    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const emailQuery = `SELECT Email, EmailPass FROM fac_User WHERE UserID = ?`;
     const [userResult] = await db.query(emailQuery, [userId]);
 
     // Step 2: Check if both Email and EmailPass are available
@@ -249,8 +249,8 @@ exports.sendAddApprovalEmail = async (req, res) => {
     const userEmail = userResult[0].Email;
     const userPass = userResult[0].EmailPass;
 
-    // Step 3: Fetch the Super-Admin's email from the fac_user table
-    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    // Step 3: Fetch the Super-Admin's email from the fac_User table
+    const superAdminQuery = `SELECT Email FROM fac_User WHERE Role = 'Super-Admin'`;
     const [superAdminResult] = await db.query(superAdminQuery);
 
     // Step 4: Check if a Super-Admin email is found
@@ -260,9 +260,9 @@ exports.sendAddApprovalEmail = async (req, res) => {
 
     const superAdminEmail = superAdminResult[0].Email;
 
-    // Step 5: Insert a new entry into the fac_request table and get the inserted RequestID
+    // Step 5: Insert a new entry into the fac_Request table and get the inserted RequestID
     const insertRequestQuery = `
-      INSERT INTO fac_request (DateTime, Status)
+      INSERT INTO fac_Request (DateTime, Status)
       VALUES (NOW(), 'Pending')
     `;
     const [result] = await db.query(insertRequestQuery);
@@ -324,7 +324,7 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
 
   try {
     // Step 1: Fetch the user's email and email password using the userId
-    const emailQuery = `SELECT Email, EmailPass FROM fac_user WHERE UserID = ?`;
+    const emailQuery = `SELECT Email, EmailPass FROM fac_User WHERE UserID = ?`;
     const [userResult] = await db.query(emailQuery, [userId]);
 
     // Step 2: Check if both Email and EmailPass are available
@@ -335,8 +335,8 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
     const userEmail = userResult[0].Email;
     const userPass = userResult[0].EmailPass;
 
-    // Step 3: Fetch the Super-Admin's email from the fac_user table
-    const superAdminQuery = `SELECT Email FROM fac_user WHERE Role = 'Super-Admin'`;
+    // Step 3: Fetch the Super-Admin's email from the fac_User table
+    const superAdminQuery = `SELECT Email FROM fac_User WHERE Role = 'Super-Admin'`;
     const [superAdminResult] = await db.query(superAdminQuery);
 
     // Step 4: Check if a Super-Admin email is found
@@ -374,9 +374,9 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
       datacenter: dataCenterName,
     };
 
-    // Step 10: Insert a new entry into the fac_request table for cabinet deletion and get the inserted RequestID
+    // Step 10: Insert a new entry into the fac_Request table for cabinet deletion and get the inserted RequestID
     const insertRequestQuery = `
-      INSERT INTO fac_request (DateTime, Status)
+      INSERT INTO fac_Request (DateTime, Status)
       VALUES (NOW(), 'Pending')
     `;
     const [result] = await db.query(insertRequestQuery);

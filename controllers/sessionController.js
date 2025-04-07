@@ -7,11 +7,11 @@ const JWT_SECRET = process.env.JWT_SECRET;;
 
 exports.checkUserTable = async (req, res) => {
   try {
-    // Explicitly check for the table 'fac_user' in the 'dcim' database
+    // Explicitly check for the table 'fac_User' in the 'dcim' database
     const [results] = await db.query(
       "SELECT COUNT(*) AS tableExists " +
       "FROM information_schema.tables " +
-      "WHERE table_schema = 'dcim' AND table_name = 'fac_user'"
+      "WHERE table_schema = 'dcim' AND table_name = 'fac_User'"
     );
 
     const exists = results[0]?.tableExists > 0; // True if the table exists
@@ -30,9 +30,9 @@ exports.createSuper = async (req, res) => {
   }
 
   try {
-    // Step 1: Create the fac_user table if it does not exist
+    // Step 1: Create the fac_User table if it does not exist
     const createUserTableQuery = `
-      CREATE TABLE IF NOT EXISTS fac_user (
+      CREATE TABLE IF NOT EXISTS fac_User (
         UserID VARCHAR(255) PRIMARY KEY,
         Password VARCHAR(255) NOT NULL,
         Email VARCHAR(255),
@@ -48,14 +48,14 @@ exports.createSuper = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     const insertUserQuery = `
-      INSERT INTO fac_user (UserID, Password, Role)
+      INSERT INTO fac_User (UserID, Password, Role)
       VALUES (?, ?, 'Super-Admin')
     `;
     await db.query(insertUserQuery, [username, hashedPassword]);
 
-    // Step 3: Create the fac_request table if it does not exist
+    // Step 3: Create the fac_Request table if it does not exist
     const createRequestTableQuery = `
-      CREATE TABLE IF NOT EXISTS fac_request (
+      CREATE TABLE IF NOT EXISTS fac_Request (
         RequestID INT AUTO_INCREMENT PRIMARY KEY,
         DateTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         Status VARCHAR(50)
@@ -80,7 +80,7 @@ exports.Login = async (req, res) => {
 
   try {
     // Query the database using async/await
-    const [results] = await db.query('SELECT * FROM fac_user WHERE BINARY UserID = ?', [username]);
+    const [results] = await db.query('SELECT * FROM fac_User WHERE BINARY UserID = ?', [username]);
 
     if (results.length === 0) {
       return res.status(401).json({ error: 'Invalid username or password.' });
@@ -102,7 +102,7 @@ exports.Login = async (req, res) => {
     );
 
     // Update the session token in the database
-    await db.query('UPDATE fac_user SET SessionToken = ? WHERE UserID = ?', [token, user.UserID]);
+    await db.query('UPDATE fac_User SET SessionToken = ? WHERE UserID = ?', [token, user.UserID]);
 
     // Send the token and user details back to the client
     res.json({
@@ -130,7 +130,7 @@ exports.Logout = async (req, res) => {
 
   try {
       // Invalidate the session token in the database
-      const result = await db.query('UPDATE fac_user SET SessionToken = NULL WHERE UserID = ?', [userId]);
+      const result = await db.query('UPDATE fac_User SET SessionToken = NULL WHERE UserID = ?', [userId]);
 
       if (result.affectedRows === 0) {
           return res.status(404).json({ error: "User not found or already logged out." });

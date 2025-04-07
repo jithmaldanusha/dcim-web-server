@@ -10,7 +10,7 @@ exports.getUser = async (req, res) => {
 
     try {
         const [result] = await db.query(
-            "SELECT Email, Role, EmailPass FROM fac_user WHERE UserID = ?",
+            "SELECT Email, Role, EmailPass FROM fac_User WHERE UserID = ?",
             [userId]
         );
 
@@ -45,7 +45,7 @@ exports.updateUsername = async (req, res) => {
     }
 
     try {
-        const result = await db.query("UPDATE fac_user SET UserID = ? WHERE UserID = ?", [
+        const result = await db.query("UPDATE fac_User SET UserID = ? WHERE UserID = ?", [
             newUserId,
             userId, // Assume the user is authenticated
         ]);
@@ -67,7 +67,7 @@ exports.checkEmail = async (req, res) => {
     }
 
     try {
-        const result = await db.query("SELECT Email FROM fac_user WHERE UserID = ?", [
+        const result = await db.query("SELECT Email FROM fac_User WHERE UserID = ?", [
             userId,
         ]);
         if (result.length === 0) {
@@ -88,7 +88,7 @@ exports.updateEmail = async (req, res) => {
     }
 
     try {
-        const result = await db.query("UPDATE fac_user SET Email = ? WHERE UserID = ?", [
+        const result = await db.query("UPDATE fac_User SET Email = ? WHERE UserID = ?", [
             newUserEmail,
             userId,
         ]);
@@ -111,7 +111,7 @@ exports.updateEmailPass = async (req, res) => {
 
     try {
         const result = await db.query(
-            "UPDATE fac_user SET EmailPass = ? WHERE UserID = ?",
+            "UPDATE fac_User SET EmailPass = ? WHERE UserID = ?",
             [newUserEmailPass, userId]
         );
 
@@ -134,7 +134,7 @@ exports.updatePassword = async (req, res) => {
     }
 
     try {
-        const [results] = await db.query("SELECT Password FROM fac_user WHERE UserID = ?", [userId]);
+        const [results] = await db.query("SELECT Password FROM fac_User WHERE UserID = ?", [userId]);
 
         if (results.length === 0) {
             return res.status(404).json({ error: "User not found." });
@@ -151,7 +151,7 @@ exports.updatePassword = async (req, res) => {
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
         // Update the password in the database
-        await db.query("UPDATE fac_user SET Password = ? WHERE UserID = ?", [
+        await db.query("UPDATE fac_User SET Password = ? WHERE UserID = ?", [
             hashedPassword,
             userId,
         ]);
@@ -171,7 +171,7 @@ exports.updateRole = async (req, res) => {
     }
 
     try {
-        const result = await db.query("UPDATE fac_user SET Role = ? WHERE UserID = ?", [
+        const result = await db.query("UPDATE fac_User SET Role = ? WHERE UserID = ?", [
             newRole,
             userId,
         ]);
@@ -192,7 +192,7 @@ exports.getUsers = async (req, res) => {
     try {
         // Fetch all UserIDs and Emails from fac_cabinet table
         const [result] = await db.query(
-            "SELECT UserID, Email, Role FROM fac_user"
+            "SELECT UserID, Email, Role FROM fac_User"
         );
 
         if (result.length === 0) {
@@ -221,7 +221,7 @@ exports.addUser = async (req, res) => {
 
         // Check if the user already exists
         const [existingUser] = await db.query(
-            "SELECT UserID FROM fac_user WHERE UserID = ?",
+            "SELECT UserID FROM fac_User WHERE UserID = ?",
             [UserID]
         );
 
@@ -231,7 +231,7 @@ exports.addUser = async (req, res) => {
 
         // Insert the new user into the database
         await db.query(
-            "INSERT INTO fac_user (UserID, Password, Role) VALUES (?, ?, ?)",
+            "INSERT INTO fac_User (UserID, Password, Role) VALUES (?, ?, ?)",
             [UserID, hashedPassword, Role]
         );
 
@@ -251,14 +251,14 @@ exports.removeUser = async (req, res) => {
 
     try {
         // Check if the user exists in the database
-        const [existingUser] = await db.query("SELECT UserID FROM fac_user WHERE UserID = ?", [userId]);
+        const [existingUser] = await db.query("SELECT UserID FROM fac_User WHERE UserID = ?", [userId]);
 
         if (existingUser.length === 0) {
             return res.status(404).json({ error: "User not found." });
         }
 
         // Delete the user from the database
-        await db.query("DELETE FROM fac_user WHERE UserID = ?", [userId]);
+        await db.query("DELETE FROM fac_User WHERE UserID = ?", [userId]);
 
         res.status(200).json({ message: "User removed successfully." });
     } catch (err) {

@@ -1,7 +1,7 @@
 const db = require('../models/db');
 
 exports.getCabinetRows = async (req, res) => {
-  const query = 'SELECT DISTINCT Name FROM fac_cabrow';
+  const query = 'SELECT DISTINCT Name FROM fac_CabRow';
 
   try {
     const [results] = await db.query(query); // Using promise-based query

@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all data centers
 exports.getDataCenters = async (req, res) => {
-  const query = 'SELECT Name FROM fac_datacenter';
+  const query = 'SELECT Name FROM fac_DataCenter';
 
   try {
     const [results] = await db.query(query); // Using promise-based query

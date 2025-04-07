@@ -3,14 +3,14 @@ const nodemailer = require('nodemailer');
 
 // Fetch all data centers
 exports.getDeviceStatus = async (req, res) => {
-    const query = 'SELECT Status FROM fac_devicestatus';
+    const query = 'SELECT Status FROM fac_DeviceStatus';
 
     try {
         const [results] = await db.query(query);
         res.json(results);
     } catch (err) {
-        console.error('Error fetching manufacturers:', err.message);
-        res.status(500).json({ error: 'Failed to fetch manufacturers' });
+        console.error('Error fetching status:', err.message);
+        res.status(500).json({ error: 'Failed to fetch status' });
     }
 };
 
@@ -23,7 +23,7 @@ exports.getModelsByManufacturer = async (req, res) => {
     }
 
     try {
-        const manufacturerQuery = `SELECT ManufacturerID FROM fac_manufacturer WHERE Name = ?`;
+        const manufacturerQuery = `SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?`;
         const [manufacturerResult] = await db.execute(manufacturerQuery, [manufacturerName]);
 
         if (manufacturerResult.length === 0) {
@@ -32,7 +32,7 @@ exports.getModelsByManufacturer = async (req, res) => {
 
         const manufacturerID = manufacturerResult[0].ManufacturerID;
 
-        const modelQuery = `SELECT Model FROM fac_devicetemplate WHERE ManufacturerID = ?`;
+        const modelQuery = `SELECT Model FROM fac_DeviceTemplate WHERE ManufacturerID = ?`;
         const [modelResults] = await db.execute(modelQuery, [manufacturerID]);
 
         if (modelResults.length === 0) {
@@ -52,7 +52,7 @@ exports.getDevicesByCabinet = async (req, res) => {
     const connection = await db.getConnection();
 
     try {
-        const query = `SELECT DeviceID, Label FROM fac_device WHERE Cabinet = ?`;
+        const query = `SELECT DeviceID, Label FROM fac_Device WHERE Cabinet = ?`;
 
         const [rows] = await connection.query(query, [cabinetID]);
 
@@ -81,11 +81,11 @@ exports.getDeviceById = async (req, res) => {
                 CONCAT(p.UserID, ' ', p.LastName) AS primaryContact,
                 dt.Model AS model, 
                 mf.Name AS manufacturer
-            FROM fac_device d
-            LEFT JOIN fac_department dept ON d.Owner = dept.DeptID
-            LEFT JOIN fac_people p ON d.PrimaryContact = p.PersonID
-            LEFT JOIN fac_devicetemplate dt ON d.TemplateID = dt.TemplateID
-            LEFT JOIN fac_manufacturer mf ON dt.ManufacturerID = mf.ManufacturerID
+            FROM fac_Device d
+            LEFT JOIN fac_Department dept ON d.Owner = dept.DeptID
+            LEFT JOIN fac_People p ON d.PrimaryContact = p.PersonID
+            LEFT JOIN fac_DeviceTemplate dt ON d.TemplateID = dt.TemplateID
+            LEFT JOIN fac_Manufacturer mf ON dt.ManufacturerID = mf.ManufacturerID
             WHERE d.DeviceID = ?
         `;
 
@@ -134,7 +134,7 @@ exports.updateDevice = async (req, res) => {
 
         // Check and fetch the ownerDeptID if owner is not null
         if (owner) {
-            const [ownerResult] = await connection.query(`SELECT DeptID FROM fac_department WHERE Name = ?`, [owner]);
+            const [ownerResult] = await connection.query(`SELECT DeptID FROM fac_Department WHERE Name = ?`, [owner]);
             if (ownerResult.length === 0) {
                 return res.status(404).json({ error: 'Owner department not found' });
             }
@@ -143,7 +143,7 @@ exports.updateDevice = async (req, res) => {
 
         // Check and fetch the primaryContactPersonID if primaryContact is not null
         if (primaryContact) {
-            const [contactResult] = await connection.query(`SELECT PersonID FROM fac_people WHERE CONCAT(UserID, ' ', LastName) = ?`, [primaryContact]);
+            const [contactResult] = await connection.query(`SELECT PersonID FROM fac_People WHERE CONCAT(UserID, ' ', LastName) = ?`, [primaryContact]);
             if (contactResult.length === 0) {
                 return res.status(404).json({ error: 'Primary contact not found' });
             }
@@ -154,8 +154,8 @@ exports.updateDevice = async (req, res) => {
         if (model && manufacturer) {
             const [templateResult] = await connection.query(
                 `SELECT dt.TemplateID 
-                FROM fac_devicetemplate dt
-                INNER JOIN fac_manufacturer m ON dt.ManufacturerID = m.ManufacturerID
+                FROM fac_DeviceTemplate dt
+                INNER JOIN fac_Manufacturer m ON dt.ManufacturerID = m.ManufacturerID
                 WHERE dt.Model = ? AND m.Name = ?`,
                 [model, manufacturer]
             );
@@ -165,9 +165,9 @@ exports.updateDevice = async (req, res) => {
             templateID = templateResult[0].TemplateID;
         }
 
-        // Perform the update on the fac_device table
+        // Perform the update on the fac_Device table
         const updateQuery = `
-            UPDATE fac_device
+            UPDATE fac_Device
             SET 
                 Label = ?, Position = ?, Height = ?, PrimaryIP = ?, SerialNo = ?, AssetTag = ?, 
                 HalfDepth = ?, BackSide = ?, Hypervisor = ?, InstallDate = ?, Status = ?, 
@@ -197,9 +197,9 @@ exports.addDevice = async (req, res) => {
     const device = req.body;
 
     try {
-        // 1. Get Owner (DeptID) from fac_department
+        // 1. Get Owner (DeptID) from fac_Department
         const [deptResult] = await connection.query(
-            'SELECT DeptID FROM fac_department WHERE Name = ?',
+            'SELECT DeptID FROM fac_Department WHERE Name = ?',
             [device.owner]
         );
 
@@ -209,24 +209,24 @@ exports.addDevice = async (req, res) => {
         // 2. Split primaryContact to extract UserID and LastName
         const [userID] = device.primaryContact.split(',').map(part => part.trim());
 
-        // Get PrimaryContact (PersonID) from fac_people
+        // Get PrimaryContact (PersonID) from fac_People
         const [personResult] = await connection.query(
-            'SELECT PersonID FROM fac_people WHERE UserID = ?',
+            'SELECT PersonID FROM fac_People WHERE UserID = ?',
             [userID]
         );
         if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
         const primaryContactID = personResult[0].PersonID;
 
-        // 3. Get CabinetID (DataCenter + Cabinet) from fac_cabinet
+        // 3. Get CabinetID (DataCenter + Cabinet) from fac_Cabinet
         const [dataCenterResult] = await connection.query(
-            'SELECT DataCenterID FROM fac_datacenter WHERE Name = ?',
+            'SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?',
             [device.dataCenter]
         );
         if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
         const dataCenterID = dataCenterResult[0].DataCenterID;
 
         const [cabinetResult] = await connection.query(
-            'SELECT CabinetID FROM fac_cabinet WHERE Location = ? AND DataCenterID = ?',
+            'SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?',
             [device.location, dataCenterID]
         );
         if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.location} in data center: ${device.dataCenter}`);
@@ -235,10 +235,10 @@ exports.addDevice = async (req, res) => {
         let manufacturerID = null;
         let templateResult = null;
 
-        // 4. Get TemplateID (Manufacturer + Model) from fac_devicetemplate only if manufacturer and model are provided
+        // 4. Get TemplateID (Manufacturer + Model) from fac_DeviceTemplate only if manufacturer and model are provided
         if (device.manufacturer && device.model) {
             const [manufacturerResult] = await connection.query(
-                'SELECT ManufacturerID FROM fac_manufacturer WHERE Name = ?',
+                'SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?',
                 [device.manufacturer]
             );
             if (manufacturerResult.length === 0) throw new Error(`Manufacturer not found: ${device.manufacturer}`);
@@ -246,7 +246,7 @@ exports.addDevice = async (req, res) => {
 
             templateResult = await connection.query(
                 'SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion ' +
-                'FROM fac_devicetemplate WHERE Model = ? AND ManufacturerID = ?',
+                'FROM fac_DeviceTemplate WHERE Model = ? AND ManufacturerID = ?',
                 [device.model, manufacturerID]
             );
             if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
@@ -257,9 +257,9 @@ exports.addDevice = async (req, res) => {
 
         const template = templateResult[0];
 
-        // 6. Insert the device into fac_device
+        // 6. Insert the device into fac_Device
         const sqlQuery =
-            'INSERT INTO fac_device (' +
+            'INSERT INTO fac_Device (' +
             'Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol, ' +
             'Hypervisor, Owner, PrimaryContact, Cabinet, Position, TemplateID, Height, Weight, ' +
             'NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots, InstallDate, Status, ' +
@@ -292,7 +292,7 @@ exports.deleteDevice = async (req, res) => {
     const deviceID = req.params.deviceID;
 
     try {
-        const query = 'DELETE FROM fac_device WHERE DeviceID = ?';
+        const query = 'DELETE FROM fac_Device WHERE DeviceID = ?';
         const [results] = await db.execute(query, [deviceID]);
 
         if (results.affectedRows === 0) {
@@ -312,9 +312,9 @@ exports.bulkImportDevices = async (req, res) => {
 
     try {
         for (const device of importedDevices) {
-            // 1. Get Owner (DeptID) from fac_department
+            // 1. Get Owner (DeptID) from fac_Department
             const [deptResult] = await connection.query(
-                `SELECT DeptID FROM fac_department WHERE Name = ?`,
+                `SELECT DeptID FROM fac_Department WHERE Name = ?`,
                 [device.owner]
             );
             if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
@@ -323,17 +323,17 @@ exports.bulkImportDevices = async (req, res) => {
             // 2. Split primaryContact to extract UserID and LastName
             const [userID] = device.primaryContact.split(',').map(part => part.trim());
 
-            // Get PrimaryContact (PersonID) from fac_people
+            // Get PrimaryContact (PersonID) from fac_People
             const [personResult] = await connection.query(
-                `SELECT PersonID FROM fac_people WHERE UserID = ?`,
+                `SELECT PersonID FROM fac_People WHERE UserID = ?`,
                 [userID]
             );
             if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
             const primaryContactID = personResult[0].PersonID;
 
-            // 3. Get CabinetID (DataCenter + Cabinet) from fac_cabinet
+            // 3. Get CabinetID (DataCenter + Cabinet) from fac_Cabinet
             const [dataCenterResult] = await connection.query(
-                `SELECT DataCenterID FROM fac_datacenter WHERE Name = ?`,
+                `SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?`,
                 [device.dataCenter]
             );
             if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
@@ -342,16 +342,16 @@ exports.bulkImportDevices = async (req, res) => {
             const cabinetLocation = device.cabinet.split(' - ')[1] || device.cabinet;
 
             const [cabinetResult] = await connection.query(
-                `SELECT CabinetID FROM fac_cabinet WHERE Location = ? AND DataCenterID = ?`,
+                `SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?`,
                 [cabinetLocation, dataCenterID] // Use the extracted 'R01.16' value
             );
 
             if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.cabinet} in data center: ${device.dataCenter}`);
             const cabinetID = cabinetResult[0].CabinetID;
 
-            // 4. Get TemplateID (Manufacturer + Model) from fac_devicetemplate
+            // 4. Get TemplateID (Manufacturer + Model) from fac_DeviceTemplate
             const [manufacturerResult] = await connection.query(
-                `SELECT ManufacturerID FROM fac_manufacturer WHERE Name = ?`,
+                `SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?`,
                 [device.manufacturer]
             );
             if (manufacturerResult.length === 0) throw new Error(`Manufacturer not found: ${device.manufacturer}`);
@@ -359,7 +359,7 @@ exports.bulkImportDevices = async (req, res) => {
 
             const [templateResult] = await connection.query(
                 `SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion 
-                 FROM fac_devicetemplate 
+                 FROM fac_DeviceTemplate 
                  WHERE Model = ? AND ManufacturerID = ?`,
                 [device.model, manufacturerID]
             );
@@ -376,9 +376,9 @@ exports.bulkImportDevices = async (req, res) => {
 
             const formattedInstallDate = excelDateToJSDate(device.installDate);
 
-            // 6. Insert the device into fac_device
+            // 6. Insert the device into fac_Device
             const sqlQuery = `
-                INSERT INTO fac_device (
+                INSERT INTO fac_Device (
                     Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
                     Hypervisor, Owner, PrimaryContact, Cabinet, Position, TemplateID, Height, Weight, 
                     NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots, InstallDate, Status,
@@ -602,7 +602,7 @@ exports.sendDeviceDeleteApprovalEmail = async (req, res) => {
 
     try {
         // Step 1: Fetch the device details using the deviceId
-        const deviceQuery = `SELECT Label, Position, Cabinet, DeviceType FROM fac_device WHERE DeviceID = ?`;
+        const deviceQuery = `SELECT Label, Position, Cabinet, DeviceType FROM fac_Device WHERE DeviceID = ?`;
         const [deviceResult] = await db.query(deviceQuery, [deviceId]);
 
         // Step 2: Check if the device is found
@@ -612,8 +612,8 @@ exports.sendDeviceDeleteApprovalEmail = async (req, res) => {
 
         const { Label, Position, Cabinet, DeviceType } = deviceResult[0];
 
-        // Step 3: Fetch the DataCenterID and Location from the fac_cabinet table using the Cabinet ID
-        const cabinetQuery = `SELECT DataCenterID, Location FROM fac_cabinet WHERE CabinetID = ?`;
+        // Step 3: Fetch the DataCenterID and Location from the fac_Cabinet table using the Cabinet ID
+        const cabinetQuery = `SELECT DataCenterID, Location FROM fac_Cabinet WHERE CabinetID = ?`;
         const [cabinetResult] = await db.query(cabinetQuery, [Cabinet]);
 
         // Step 4: Check if the cabinet is found and the DataCenterID exists
@@ -623,8 +623,8 @@ exports.sendDeviceDeleteApprovalEmail = async (req, res) => {
 
         const { DataCenterID, Location: cabinetLocation } = cabinetResult[0];
 
-        // Step 5: Fetch the DataCenter Name from the fac_datacenter table using the DataCenterID
-        const dataCenterQuery = `SELECT Name FROM fac_datacenter WHERE DataCenterID = ?`;
+        // Step 5: Fetch the DataCenter Name from the fac_DataCenter table using the DataCenterID
+        const dataCenterQuery = `SELECT Name FROM fac_DataCenter WHERE DataCenterID = ?`;
         const [dataCenterResult] = await db.query(dataCenterQuery, [DataCenterID]);
 
         // Step 6: Check if the data center is found

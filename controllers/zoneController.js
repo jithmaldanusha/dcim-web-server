@@ -2,7 +2,7 @@ const db = require('../models/db');
 
 // Fetch all zones
 exports.getZones = async (req, res) => {
-  const query = 'SELECT DISTINCT Description FROM fac_zone';
+  const query = 'SELECT DISTINCT Description FROM fac_Zone';
 
   try {
     const [results] = await db.query(query); // Using promise-based query

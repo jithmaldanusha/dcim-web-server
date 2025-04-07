@@ -5,7 +5,7 @@ exports.getZones = async (req, res) => {
   const query = 'SELECT DISTINCT Description FROM fac_Zone';
 
   try {
-    const [results] = await db.query(query); // Using promise-based query
+    const [results] = await db.query(query);
     res.json(results);
   } catch (err) {
     console.error('Error fetching zones:', err.message);

@@ -52,7 +52,7 @@ exports.getPendingRequests = async (req, res) => {
             res.status(200).json(result);
         } else {
             // If no records are found, send a 404 response
-            res.status(404).json({ error: 'No pending requests found' });
+            res.status(200).json({ result: 'No pending requests found' });
         }
     } catch (error) {
         console.error('Error checking request status:', error.message);
@@ -71,7 +71,7 @@ exports.getRejectedRequests = async (req, res) => {
             res.status(200).json(result);
         } else {
             // If no records are found, send a 404 response
-            res.status(404).json({ error: 'No pending requests found' });
+            res.status(200).json({ result: 'No rejected requests found' });
         }
     } catch (error) {
         console.error('Error checking request status:', error.message);

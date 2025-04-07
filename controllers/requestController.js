@@ -5,7 +5,7 @@ exports.getRequestStatus = async (req, res) => {
     const { requestID } = req.params; // Extract requestID from route params
     try {
         // Query the database to check the status of the request
-        const query = 'SELECT Status FROM fac_request WHERE RequestID = ?';
+        const query = 'SELECT Status FROM fac_Request WHERE RequestID = ?';
         const [result] = await db.query(query, [requestID]);
 
         if (result.length > 0) {
@@ -27,7 +27,7 @@ exports.updateRequestStatus = async (req, res) => {
 
     try {
         // Update query to set the status of the request in the database
-        const query = 'UPDATE fac_request SET status = ? WHERE requestID = ?';
+        const query = 'UPDATE fac_Request SET Status = ? WHERE requestID = ?';
         const [result] = await db.execute(query, [status, reqID]);
 
         if (result.affectedRows > 0) {
@@ -43,8 +43,8 @@ exports.updateRequestStatus = async (req, res) => {
 
 exports.getPendingRequests = async (req, res) => {
     try {
-        // Query the database to get all columns from fac_request where Status is "Pending"
-        const query = 'SELECT * FROM fac_request WHERE Status = "Pending"';
+        // Query the database to get all columns from fac_Request where Status is "Pending"
+        const query = 'SELECT * FROM fac_Request WHERE Status = "Pending"';
         const [result] = await db.query(query);
 
         if (result.length > 0) {
@@ -62,8 +62,8 @@ exports.getPendingRequests = async (req, res) => {
 
 exports.getRejectedRequests = async (req, res) => {
     try {
-        // Query the database to get all columns from fac_request where Status is "Pending"
-        const query = 'SELECT * FROM fac_request WHERE Status = "Rejected"';
+        // Query the database to get all columns from fac_Request where Status is "Pending"
+        const query = 'SELECT * FROM fac_Request WHERE Status = "Rejected"';
         const [result] = await db.query(query);
 
         if (result.length > 0) {

@@ -275,7 +275,7 @@ exports.sendAddApprovalEmail = async (req, res) => {
         .join('&');
     };
 
-    const approvalLink = `https://${process.env.DB_HOST}/email/addCabinetWindow?requestID=${requestID}&${buildQueryString(cabinetData)}`;
+    const approvalLink = `http://${process.env.DB_HOST}/email/addCabinetWindow?requestID=${requestID}&${buildQueryString(cabinetData)}`;
 
     // Step 7: Configure the email transport using the user's email and password
     const transporter = nodemailer.createTransport({
@@ -389,7 +389,7 @@ exports.sendDeleteApprovalEmail = async (req, res) => {
         .join('&');
     };
 
-    const approvalLink = `https://${process.env.DB_HOST}/email/deleteCabinetWindow?requestID=${requestID}&cabinetID=${cabinetID}&${buildQueryString(data)}`;
+    const approvalLink = `http://${process.env.DB_HOST}/email/deleteCabinetWindow?requestID=${requestID}&cabinetID=${cabinetID}&${buildQueryString(data)}`;
     // Step 12: Configure the email transport using the user's email and password
     const transporter = nodemailer.createTransport({
       host: 'smtp.sltidc.lk',

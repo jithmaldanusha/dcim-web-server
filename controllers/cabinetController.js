@@ -188,18 +188,20 @@ exports.addCabinet = async (req, res) => {
 
     const insertQuery = `
       INSERT INTO fac_Cabinet (
-        Location, DataCenterID, AssignedTo, ZoneID, CabRowID, CabinetHeight, 
-        U1Position, Model, Keylock, MaxKW, MaxWeight, InstallationDate, Notes, MapX1, MapX2, MapY1, MapY2
+        Location, LocationSortable, DataCenterID, AssignedTo, ZoneID, CabRowID, 
+        CabinetHeight, U1Position, Model, Keylock, MaxKW, MaxWeight, 
+        InstallationDate, Notes, MapX1, MapX2, MapY1, MapY2
       ) 
       VALUES (
-        ?, 
+        ?, ?, 
         (SELECT DataCenterID FROM fac_DataCenter WHERE Name = ? LIMIT 1), 
         (SELECT DeptID FROM fac_Department WHERE Name = ? LIMIT 1), 
-        ${zoneQuery}, ${cabinetRowQuery}, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0
+        ${zoneQuery}, ${cabinetRowQuery}, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0
       );`;
 
     const values = [
-      location, dataCenter, assignedTo,
+      location, location, // Location and LocationSortable
+      dataCenter, assignedTo,
       ...(zone !== 'N/A' ? [zone] : []),
       ...(cabinetRow !== 'N/A' ? [cabinetRow] : []),
       cabinetHeight, u1Position, model, keyLockInfo, maxKW, maxWeight, new Date(dateOfInstallation), notes,
@@ -213,6 +215,7 @@ exports.addCabinet = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
 
 // Delete cabinet
 exports.deleteCabinet = async (req, res) => {

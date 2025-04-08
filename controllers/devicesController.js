@@ -125,6 +125,10 @@ exports.getDeviceById = async (req, res) => {
 exports.updateDevice = async (req, res) => {
     const { deviceID } = req.params;
     const { label, position, height, primaryIP, serialNo, assetTag, halfDepth, backside, hypervisor, installDate, status, owner, primaryContact, model, manufacturer } = req.body;
+
+    console.log('📦 Request received to update device with ID:', deviceID);
+    console.log('📝 Request body:', req.body);
+
     const connection = await db.getConnection();
 
     try {
@@ -134,35 +138,59 @@ exports.updateDevice = async (req, res) => {
 
         // Check and fetch the ownerDeptID if owner is not null
         if (owner) {
+            console.log('🔍 Checking owner department:', owner);
             const [ownerResult] = await connection.query(`SELECT DeptID FROM fac_Department WHERE Name = ?`, [owner]);
+            console.log('📄 Owner result:', ownerResult);
+
             if (ownerResult.length === 0) {
+                console.log('❌ Owner department not found');
                 return res.status(404).json({ error: 'Owner department not found' });
             }
+
             ownerDeptID = ownerResult[0].DeptID;
+            console.log('✅ ownerDeptID:', ownerDeptID);
         }
 
         // Check and fetch the primaryContactPersonID if primaryContact is not null
         if (primaryContact) {
-            const [contactResult] = await connection.query(`SELECT PersonID FROM fac_People WHERE CONCAT(UserID, ' ', LastName) = ?`, [primaryContact]);
+            console.log('🔍 Checking primary contact:', primaryContact);
+            const userID = primaryContact.split(',')[0].trim(); // Extract 'Administrator' from 'Administrator, IDC'
+            console.log('🧩 Extracted UserID from primaryContact:', userID);
+
+            const [contactResult] = await connection.query(
+                `SELECT PersonID FROM fac_People WHERE UserID = ?`,
+                [userID]
+            );
+            console.log('📄 Contact result:', contactResult);
+
             if (contactResult.length === 0) {
+                console.log('❌ Primary contact not found');
                 return res.status(404).json({ error: 'Primary contact not found' });
             }
+
             primaryContactPersonID = contactResult[0].PersonID;
+            console.log('✅ primaryContactPersonID:', primaryContactPersonID);
         }
 
         // Check and fetch the templateID if both model and manufacturer are not null
         if (model && manufacturer) {
+            console.log('🔍 Checking model and manufacturer:', model, manufacturer);
             const [templateResult] = await connection.query(
                 `SELECT dt.TemplateID 
-                FROM fac_DeviceTemplate dt
-                INNER JOIN fac_Manufacturer m ON dt.ManufacturerID = m.ManufacturerID
-                WHERE dt.Model = ? AND m.Name = ?`,
+                 FROM fac_DeviceTemplate dt
+                 INNER JOIN fac_Manufacturer m ON dt.ManufacturerID = m.ManufacturerID
+                 WHERE dt.Model = ? AND m.Name = ?`,
                 [model, manufacturer]
             );
+            console.log('📄 Template result:', templateResult);
+
             if (templateResult.length === 0) {
+                console.log('❌ Device model or manufacturer not found');
                 return res.status(404).json({ error: 'Device model or manufacturer not found' });
             }
+
             templateID = templateResult[0].TemplateID;
+            console.log('✅ templateID:', templateID);
         }
 
         // Perform the update on the fac_Device table
@@ -180,17 +208,21 @@ exports.updateDevice = async (req, res) => {
             installDate || null, status || null, ownerDeptID || null, primaryContactPersonID || null, templateID || null, deviceID
         ];
 
-        await connection.query(updateQuery, updateValues);
+        console.log('📤 Executing update query with values:', updateValues);
+        const [updateResult] = await connection.query(updateQuery, updateValues);
+        console.log('✅ Update query result:', updateResult);
 
         res.status(200).json({ message: 'Device updated successfully' });
 
     } catch (error) {
-        console.error('Error updating device:', error.message);
+        console.error('🔥 Error updating device:', error);
         res.status(500).json({ error: 'Internal server error' });
     } finally {
         connection.release();
+        console.log('🔚 Connection released');
     }
 };
+
 
 exports.addDevice = async (req, res) => {
     const connection = await db.getConnection();

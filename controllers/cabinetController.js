@@ -181,25 +181,34 @@ exports.addCabinet = async (req, res) => {
   } = req.body;
 
   try {
-    // Generate LocationSortable (or set it as NULL if location is not provided)
-    const locationSortable = location ? location.toLowerCase() : null; // Use null if no location is provided
+    // Default values for missing fields
+    const locationSortable = location ? location.toLowerCase() : ''; // Default empty string for LocationSortable
+    const frontEdge = 'Top'; // Default value for FrontEdge
+    const u1PositionValue = u1Position || 'Default'; // Default value for U1Position
+    const cabinetHeightValue = cabinetHeight || 0; // Default value for CabinetHeight (0)
+    const modelValue = model || ''; // Default empty string for Model
+    const keyLockInfoValue = keyLockInfo || ''; // Default empty string for Keylock
+    const maxKWValue = maxKW || 0; // Default value for MaxKW (0)
+    const maxWeightValue = maxWeight || 0; // Default value for MaxWeight (0)
+    const dateOfInstallationValue = dateOfInstallation || '0000-00-00'; // Default date for InstallationDate
+    const notesValue = notes || ''; // Default empty string for Notes
 
-    // Check if zone or cabinetRow is "N/A" and assign NULL, otherwise use the subquery for the actual value
-    const zoneQuery = zone === 'N/A' ? 'NULL' : `(SELECT ZoneID FROM fac_Zone WHERE Description = ? LIMIT 1)`;
-    const cabinetRowQuery = cabinetRow === 'N/A' ? 'NULL' : `(SELECT CabRowID FROM fac_CabRow WHERE Name = ? LIMIT 1)`;
+    // Check if zone or cabinetRow is "N/A" and assign default value, otherwise use the subquery for the actual value
+    const zoneQuery = zone === 'N/A' ? 0 : `(SELECT ZoneID FROM fac_Zone WHERE Description = ? LIMIT 1)`; // Default to 0 for "N/A" zone
+    const cabinetRowQuery = cabinetRow === 'N/A' ? 0 : `(SELECT CabRowID FROM fac_CabRow WHERE Name = ? LIMIT 1)`; // Default to 0 for "N/A" cabinet row
 
     const insertQuery = `
       INSERT INTO fac_Cabinet (
         Location, LocationSortable, DataCenterID, AssignedTo, ZoneID, CabRowID, 
         CabinetHeight, U1Position, Model, Keylock, MaxKW, MaxWeight, InstallationDate, 
-        Notes, MapX1, MapX2, MapY1, MapY2
+        Notes, MapX1, MapX2, MapY1, MapY2, FrontEdge
       ) 
       VALUES (
         ?, ?, 
         (SELECT DataCenterID FROM fac_DataCenter WHERE Name = ? LIMIT 1), 
         (SELECT DeptID FROM fac_Department WHERE Name = ? LIMIT 1), 
         ${zoneQuery}, ${cabinetRowQuery}, 
-        ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0
+        ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?
       );
     `;
 
@@ -207,7 +216,8 @@ exports.addCabinet = async (req, res) => {
       location, locationSortable, dataCenter, assignedTo,
       ...(zone !== 'N/A' ? [zone] : []),
       ...(cabinetRow !== 'N/A' ? [cabinetRow] : []),
-      cabinetHeight, u1Position, model, keyLockInfo, maxKW, maxWeight, new Date(dateOfInstallation), notes,
+      cabinetHeightValue, u1PositionValue, modelValue, keyLockInfoValue, maxKWValue, maxWeightValue, dateOfInstallationValue, notesValue,
+      frontEdge // Use the default value for FrontEdge ('Top')
     ];
 
     const [results] = await db.execute(insertQuery, values);
@@ -218,6 +228,7 @@ exports.addCabinet = async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 }
+
 
 // Delete cabinet
 exports.deleteCabinet = async (req, res) => {

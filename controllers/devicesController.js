@@ -341,73 +341,95 @@ exports.deleteDevice = async (req, res) => {
 exports.bulkImportDevices = async (req, res) => {
     const connection = await db.getConnection();
     const importedDevices = req.body.data;
-    console.log(importedDevices);
+    const failedInserts = [];
+
+    const excelDateToJSDate = (serial) => {
+        const excelEpoch = new Date(1899, 11, 30);
+        const daysSinceEpoch = parseInt(serial, 10);
+        if (isNaN(daysSinceEpoch)) return null;
+        const jsDate = new Date(excelEpoch.getTime() + daysSinceEpoch * 86400000);
+        return jsDate.toISOString().split('T')[0];
+    };
 
     try {
         for (const device of importedDevices) {
-            // 1. Get Owner (DeptID) from fac_Department
-            const [deptResult] = await connection.query(
-                `SELECT DeptID FROM fac_Department WHERE Name = ?`,
-                [device.owner]
-            );
-            if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
-            const ownerDeptID = deptResult[0].DeptID;
+            try {
+                // === Validate critical fields ===
+                if (!device.owner || !device.primaryContact || !device.dataCenter || !device.cabinet) {
+                    throw new Error(`Missing required field in device: ${JSON.stringify(device)}`);
+                }
 
-            // 2. Split primaryContact to extract UserID
-            const [userID] = device.primaryContact.split(',').map(part => part.trim());
+                // 1. Get Owner (DeptID)
+                const [deptResult] = await connection.query(
+                    `SELECT DeptID FROM fac_Department WHERE Name = ?`,
+                    [device.owner]
+                );
+                if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
+                const ownerDeptID = deptResult[0].DeptID;
 
-            const [personResult] = await connection.query(
-                `SELECT PersonID FROM fac_People WHERE UserID = ?`,
-                [userID]
-            );
-            if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
-            const primaryContactID = personResult[0].PersonID;
+                // 2. Get PrimaryContact (UserID -> PersonID)
+                const [userID] = device.primaryContact.split(',').map(part => part.trim());
+                if (!userID) throw new Error(`Invalid primary contact format: ${device.primaryContact}`);
 
-            // 3. Get CabinetID
-            const [dataCenterResult] = await connection.query(
-                `SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?`,
-                [device.dataCenter]
-            );
-            if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
-            const dataCenterID = dataCenterResult[0].DataCenterID;
+                const [personResult] = await connection.query(
+                    `SELECT PersonID FROM fac_People WHERE UserID = ?`,
+                    [userID]
+                );
+                if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
+                const primaryContactID = personResult[0].PersonID;
 
-            const cabinetLocation = device.cabinet.split(' - ')[1] || device.cabinet;
-            const [cabinetResult] = await connection.query(
-                `SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?`,
-                [cabinetLocation, dataCenterID]
-            );
-            if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.cabinet} in data center: ${device.dataCenter}`);
-            const cabinetID = cabinetResult[0].CabinetID;
+                // 3. Get CabinetID
+                const [dataCenterResult] = await connection.query(
+                    `SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?`,
+                    [device.dataCenter]
+                );
+                if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
+                const dataCenterID = dataCenterResult[0].DataCenterID;
 
-            // 4. Get Template
-            const [manufacturerResult] = await connection.query(
-                `SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?`,
-                [device.manufacturer]
-            );
-            if (manufacturerResult.length === 0) throw new Error(`Manufacturer not found: ${device.manufacturer}`);
-            const manufacturerID = manufacturerResult[0].ManufacturerID;
+                const cabinetLocation = device.cabinet.includes(' - ') ? device.cabinet.split(' - ')[1] : device.cabinet;
+                const [cabinetResult] = await connection.query(
+                    `SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?`,
+                    [cabinetLocation, dataCenterID]
+                );
+                if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${cabinetLocation} in data center: ${device.dataCenter}`);
+                const cabinetID = cabinetResult[0].CabinetID;
 
-            const [templateResult] = await connection.query(
-                `SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion 
-                 FROM fac_DeviceTemplate 
-                 WHERE Model = ? AND ManufacturerID = ?`,
-                [device.model, manufacturerID]
-            );
-            if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
-            const template = templateResult[0];
+                // 4. Get Template
+                let template = {
+                    TemplateID: '',
+                    Height: 0,
+                    Weight: 0,
+                    Wattage: 0,
+                    PSCount: 1,
+                    NumPorts: 0,
+                    ChassisSlots: 0,
+                    RearChassisSlots: 0,
+                    SNMPVersion: 'noAuthNoPriv'
+                };
 
-            // 5. Excel date conversion
-            const excelDateToJSDate = (serial) => {
-                const excelEpoch = new Date(1899, 11, 30);
-                const daysSinceEpoch = parseInt(serial, 10);
-                const jsDate = new Date(excelEpoch.getTime() + daysSinceEpoch * 86400000);
-                return jsDate.toISOString().split('T')[0];
-            };
+                if (device.manufacturer && device.model) {
+                    const [manufacturerResult] = await connection.query(
+                        `SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?`,
+                        [device.manufacturer]
+                    );
+                    if (manufacturerResult.length === 0) throw new Error(`Manufacturer not found: ${device.manufacturer}`);
+                    const manufacturerID = manufacturerResult[0].ManufacturerID;
 
-            const formattedInstallDate = excelDateToJSDate(device.installDate);
+                    const [templateResult] = await connection.query(
+                        `SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion 
+                         FROM fac_DeviceTemplate 
+                         WHERE Model = ? AND ManufacturerID = ?`,
+                        [device.model, manufacturerID]
+                    );
+                    if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
+                    template = templateResult[0];
+                }
 
-            // 6. Insert into fac_Device
-            const sqlQuery = `
+                const formattedInstallDate = excelDateToJSDate(device.installDate) || new Date().toISOString().split('T')[0];
+                const today = new Date().toISOString().split('T')[0];
+
+                // 5. Insert Device
+                const sqlQuery = `
                 INSERT INTO fac_Device (
                     Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
                     v3AuthPassphrase, v3PrivPassphrase, SNMPCommunity, SNMPFailureCount,
@@ -416,33 +438,40 @@ exports.bulkImportDevices = async (req, res) => {
                     TemplateID, Height, Weight, NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
                     ParentDevice, MfgDate, InstallDate, WarrantyCo, WarrantyExpire, Notes, Status,
                     HalfDepth, BackSide, AuditStamp, FirstPortNum
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
-            const today = new Date().toISOString().split('T')[0]; // For MfgDate and AuditStamp
-            const values = [
-                device.label, device.serialNo, device.assetTag, device.hostname,
-                template.SNMPVersion, 'noAuthNoPriv', 'MD5', 'DES',
-                '', '', '', 0,
-                device.hypervisor || "None", '', '', 0, '',
-                ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position,
-                template.TemplateID, template.Height, template.Weight,
-                template.Wattage, template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,
-                0, today, formattedInstallDate, '', null, '', device.reservation || 'Production',
-                device.halfDepth || 0, device.backSide || 0, new Date(), 0
-            ];
+                const values = [
+                    device.label, device.serialNo, device.assetTag, device.hostname || '',
+                    template.SNMPVersion || '', 'noAuthNoPriv', 'MD5', 'DES',
+                    '', '', '', 0,
+                    device.hypervisor || 'None', '', '', 0, '',
+                    ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position || '',
+                    template.TemplateID || '', template.Height || 0, template.Weight || 0,
+                    template.Wattage || 0, template.PSCount || 1, template.NumPorts || 0, template.ChassisSlots || 0, template.RearChassisSlots || 0,
+                    0, today, formattedInstallDate, '', null, '', device.reservation || 'Production',
+                    device.halfDepth || 0, device.backSide || 0, today, 0
+                ];
 
-
-            await connection.query(sqlQuery, values);
+                await connection.query(sqlQuery, values);
+            } catch (err) {
+                console.error(`Error inserting device '${device.label || 'unknown'}':`, err.message);
+                failedInserts.push({ device: device.label || 'unknown', error: err.message });
+            }
         }
 
         connection.release();
-        res.status(200).send({ message: 'Bulk import successful' });
-    } catch (error) {
-        console.error('Error during bulk import:', error.message);
-        res.status(500).send({ error: error.message });
+        res.status(200).send({
+            message: `Bulk import completed. ${importedDevices.length - failedInserts.length} succeeded, ${failedInserts.length} failed.`,
+            failedInserts
+        });
+    } catch (err) {
+        connection.release();
+        console.error('Unexpected error during bulk import:', err.message);
+        res.status(500).send({ error: 'Bulk import failed due to a server error.' });
     }
 };
+
 
 exports.sendBulkDeviceApprovalEmail = async (req, res) => {
     const deviceData = req.body.data;

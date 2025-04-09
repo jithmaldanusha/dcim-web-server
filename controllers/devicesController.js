@@ -272,7 +272,7 @@ exports.addDevice = async (req, res) => {
             NumPorts: 0,
             ChassisSlots: 0,
             RearChassisSlots: 0,
-            SNMPVersion: ''
+            SNMPVersion: 1
         };
 
         // 4. Get Template if applicable
@@ -311,10 +311,10 @@ exports.addDevice = async (req, res) => {
 
         const values = [
             device.label, device.serialNo, device.assetTag, device.hostname || '',
-            template.SNMPVersion || '', 'noAuthNoPriv', 'MD5', 'DES',
+            template.SNMPVersion || 1, 'noAuthNoPriv', 'MD5', 'DES',
             '', '', '', 0,
             device.hypervisor || 'None', '', '', 0, '',
-            ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position || '',
+            ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position || 1,
             template.TemplateID || '', template.Height || 0, template.Weight || 0,
             template.Wattage || 0, template.PSCount || 1, template.NumPorts || 0, template.ChassisSlots || 0, template.RearChassisSlots || 0,
             0, today, installDate, '', null, '', device.reservation || '',

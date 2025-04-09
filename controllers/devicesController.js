@@ -78,7 +78,7 @@ exports.getDeviceById = async (req, res) => {
                 d.Label, d.Position, d.Height, d.PrimaryIP, d.SerialNo, d.AssetTag, 
                 d.HalfDepth, d.BackSide, d.Hypervisor, d.InstallDate, d.Status,
                 dept.Name AS owner, 
-                CONCAT(p.UserID, ' ', p.LastName) AS primaryContact,
+                CONCAT(p.UserID, ', ', p.LastName) AS primaryContact,
                 dt.Model AS model, 
                 mf.Name AS manufacturer
             FROM fac_Device d
@@ -204,8 +204,8 @@ exports.updateDevice = async (req, res) => {
         `;
 
         const updateValues = [
-            label || null, position || null, height || null, primaryIP || null, serialNo || null, assetTag || null, halfDepth || null, backside || null, hypervisor || null,
-            installDate || null, status || null, ownerDeptID || null, primaryContactPersonID || null, templateID || null, deviceID
+            label || '', position || '', height || '', primaryIP || '', serialNo || '', assetTag || '', halfDepth || '', backside || '', hypervisor || '',
+            installDate || '', status || '', ownerDeptID || '', primaryContactPersonID || '', templateID || '', deviceID
         ];
 
         console.log('📤 Executing update query with values:', updateValues);

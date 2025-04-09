@@ -409,26 +409,29 @@ exports.bulkImportDevices = async (req, res) => {
             // 6. Insert into fac_Device
             const sqlQuery = `
                 INSERT INTO fac_Device (
-                    Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion,
-                    v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
-                    v3AuthPassphrase, v3PrivPassphrase,
-                    Hypervisor, Owner, PrimaryContact, Cabinet, Position,
-                    TemplateID, Height, Weight, NominalWatts,
-                    PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
-                    InstallDate, Status, HalfDepth, BackSide
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
+                    v3AuthPassphrase, v3PrivPassphrase, SNMPCommunity, SNMPFailureCount,
+                    Hypervisor, APIUsername, APIPassword, APIPort, ProxMoxRealm,
+                    Owner, EscalationTimeID, EscalationID, PrimaryContact, Cabinet, Position,
+                    TemplateID, Height, Weight, NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
+                    ParentDevice, MfgDate, InstallDate, WarrantyCo, WarrantyExpire, Notes, Status,
+                    HalfDepth, BackSide, AuditStamp, FirstPortNum
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             `;
 
+            const today = new Date().toISOString().split('T')[0]; // For MfgDate and AuditStamp
             const values = [
                 device.label, device.serialNo, device.assetTag, device.hostname,
-                template.SNMPVersion,
-                'noAuthNoPriv', 'MD5', 'DES',
-                'None', 'None',
-                device.hypervisor || "None", ownerDeptID, primaryContactID, cabinetID, device.position,
-                template.TemplateID, template.Height, template.Weight, template.Wattage,
-                template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,
-                formattedInstallDate, device.reservation || '', device.halfDepth || 0, device.backSide || 0
+                template.SNMPVersion, 'noAuthNoPriv', 'MD5', 'DES',
+                '', '', '', 0,
+                device.hypervisor || "None", '', '', 0, '',
+                ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position,
+                template.TemplateID, template.Height, template.Weight,
+                template.Wattage, template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,
+                0, today, formattedInstallDate, '', null, '', device.reservation || 'Production',
+                device.halfDepth || 0, device.backSide || 0, new Date(), 0
             ];
+
 
             await connection.query(sqlQuery, values);
         }

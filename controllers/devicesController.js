@@ -229,19 +229,16 @@ exports.addDevice = async (req, res) => {
     const device = req.body;
 
     try {
-        // 1. Get Owner (DeptID) from fac_Department
+        // 1. Get Owner (DeptID)
         const [deptResult] = await connection.query(
             'SELECT DeptID FROM fac_Department WHERE Name = ?',
             [device.owner]
         );
-
         if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
         const ownerDeptID = deptResult[0].DeptID;
 
-        // 2. Split primaryContact to extract UserID and LastName
+        // 2. Extract UserID from primaryContact
         const [userID] = device.primaryContact.split(',').map(part => part.trim());
-
-        // Get PrimaryContact (PersonID) from fac_People
         const [personResult] = await connection.query(
             'SELECT PersonID FROM fac_People WHERE UserID = ?',
             [userID]
@@ -249,7 +246,7 @@ exports.addDevice = async (req, res) => {
         if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
         const primaryContactID = personResult[0].PersonID;
 
-        // 3. Get CabinetID (DataCenter + Cabinet) from fac_Cabinet
+        // 3. Get CabinetID
         const [dataCenterResult] = await connection.query(
             'SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?',
             [device.dataCenter]
@@ -257,17 +254,28 @@ exports.addDevice = async (req, res) => {
         if (dataCenterResult.length === 0) throw new Error(`Data center not found: ${device.dataCenter}`);
         const dataCenterID = dataCenterResult[0].DataCenterID;
 
+        const cabinetLocation = device.location.includes(' - ') ? device.location.split(' - ')[1] : device.location;
         const [cabinetResult] = await connection.query(
             'SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?',
-            [device.location, dataCenterID]
+            [cabinetLocation, dataCenterID]
         );
-        if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.location} in data center: ${device.dataCenter}`);
+        if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${cabinetLocation} in data center: ${device.dataCenter}`);
         const cabinetID = cabinetResult[0].CabinetID;
 
         let manufacturerID = null;
-        let templateResult = null;
+        let template = {
+            TemplateID: '',
+            Height: 0,
+            Weight: 0,
+            Wattage: 0,
+            PSCount: 1,
+            NumPorts: 0,
+            ChassisSlots: 0,
+            RearChassisSlots: 0,
+            SNMPVersion: 'noAuthNoPriv'
+        };
 
-        // 4. Get TemplateID (Manufacturer + Model) from fac_DeviceTemplate only if manufacturer and model are provided
+        // 4. Get Template if applicable
         if (device.manufacturer && device.model) {
             const [manufacturerResult] = await connection.query(
                 'SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?',
@@ -276,42 +284,45 @@ exports.addDevice = async (req, res) => {
             if (manufacturerResult.length === 0) throw new Error(`Manufacturer not found: ${device.manufacturer}`);
             manufacturerID = manufacturerResult[0].ManufacturerID;
 
-            templateResult = await connection.query(
+            const [templateResult] = await connection.query(
                 'SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion ' +
                 'FROM fac_DeviceTemplate WHERE Model = ? AND ManufacturerID = ?',
                 [device.model, manufacturerID]
             );
             if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
-        } else {
-            // If no manufacturer/model, set template result as an empty object with default values
-            templateResult = [{ SNMPVersion: 'noAuthNoPriv', Height: 0, Weight: 0, Wattage: 0, PSCount: 1, NumPorts: 0, ChassisSlots: 0, RearChassisSlots: 0 }];
+            template = templateResult[0];
         }
 
-        const template = templateResult[0];
+        const today = new Date().toISOString().split('T')[0];
+        const installDate = device.installDate || today;
 
-        // 6. Insert the device into fac_Device
-        const sqlQuery =
-            'INSERT INTO fac_Device (' +
-            'Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol, ' +
-            'Hypervisor, Owner, PrimaryContact, Cabinet, Position, TemplateID, Height, Weight, ' +
-            'NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots, InstallDate, Status, ' +
-            'HalfDepth, BackSide' +
-            ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
-        ;
+        // 5. Insert into fac_Device with extended fields
+        const sqlQuery = `
+            INSERT INTO fac_Device (
+                Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
+                v3AuthPassphrase, v3PrivPassphrase, SNMPCommunity, SNMPFailureCount,
+                Hypervisor, APIUsername, APIPassword, APIPort, ProxMoxRealm,
+                Owner, EscalationTimeID, EscalationID, PrimaryContact, Cabinet, Position,
+                TemplateID, Height, Weight, NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
+                ParentDevice, MfgDate, InstallDate, WarrantyCo, WarrantyExpire, Notes, Status,
+                HalfDepth, BackSide, AuditStamp, FirstPortNum
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
 
         const values = [
-            device.label, device.serialNo, device.assetTag, device.hostname || "",
+            device.label, device.serialNo, device.assetTag, device.hostname || '',
             template.SNMPVersion || '', 'noAuthNoPriv', 'MD5', 'DES',
-            device.hypervisor || "None", ownerDeptID, primaryContactID, cabinetID, device.position || "",
-            template.TemplateID || '', template.Height || '', template.Weight || '',
-            template.Wattage || '', template.PSCount || '', template.NumPorts || '', template.ChassisSlots || '', template.RearChassisSlots || '',
-            device.installDate, device.reservation || '', device.halfDepth || 0, device.backside || 0
+            '', '', '', 0,
+            device.hypervisor || 'None', '', '', 0, '',
+            ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position || '',
+            template.TemplateID || '', template.Height || 0, template.Weight || 0,
+            template.Wattage || 0, template.PSCount || 1, template.NumPorts || 0, template.ChassisSlots || 0, template.RearChassisSlots || 0,
+            0, today, installDate, '', null, '', device.reservation || 'Production',
+            device.halfDepth || 0, device.backside || 0, today, 0
         ];
 
-        // Execute the insert query
         await connection.query(sqlQuery, values);
 
-        // Release connection and respond success
         connection.release();
         res.status(200).send({ message: 'Device inserted successfully' });
     } catch (error) {
@@ -319,6 +330,7 @@ exports.addDevice = async (req, res) => {
         res.status(500).send({ error: error.message });
     }
 };
+
 
 exports.deleteDevice = async (req, res) => {
     const deviceID = req.params.deviceID;

@@ -341,6 +341,7 @@ exports.deleteDevice = async (req, res) => {
 exports.bulkImportDevices = async (req, res) => {
     const connection = await db.getConnection();
     const importedDevices = req.body.data;
+    console.log(importedDevices);
 
     try {
         for (const device of importedDevices) {
@@ -352,10 +353,9 @@ exports.bulkImportDevices = async (req, res) => {
             if (deptResult.length === 0) throw new Error(`Owner not found: ${device.owner}`);
             const ownerDeptID = deptResult[0].DeptID;
 
-            // 2. Split primaryContact to extract UserID and LastName
+            // 2. Split primaryContact to extract UserID
             const [userID] = device.primaryContact.split(',').map(part => part.trim());
 
-            // Get PrimaryContact (PersonID) from fac_People
             const [personResult] = await connection.query(
                 `SELECT PersonID FROM fac_People WHERE UserID = ?`,
                 [userID]
@@ -363,7 +363,7 @@ exports.bulkImportDevices = async (req, res) => {
             if (personResult.length === 0) throw new Error(`Primary contact not found: ${userID}`);
             const primaryContactID = personResult[0].PersonID;
 
-            // 3. Get CabinetID (DataCenter + Cabinet) from fac_Cabinet
+            // 3. Get CabinetID
             const [dataCenterResult] = await connection.query(
                 `SELECT DataCenterID FROM fac_DataCenter WHERE Name = ?`,
                 [device.dataCenter]
@@ -372,16 +372,14 @@ exports.bulkImportDevices = async (req, res) => {
             const dataCenterID = dataCenterResult[0].DataCenterID;
 
             const cabinetLocation = device.cabinet.split(' - ')[1] || device.cabinet;
-
             const [cabinetResult] = await connection.query(
                 `SELECT CabinetID FROM fac_Cabinet WHERE Location = ? AND DataCenterID = ?`,
-                [cabinetLocation, dataCenterID] // Use the extracted 'R01.16' value
+                [cabinetLocation, dataCenterID]
             );
-
             if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${device.cabinet} in data center: ${device.dataCenter}`);
             const cabinetID = cabinetResult[0].CabinetID;
 
-            // 4. Get TemplateID (Manufacturer + Model) from fac_DeviceTemplate
+            // 4. Get Template
             const [manufacturerResult] = await connection.query(
                 `SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?`,
                 [device.manufacturer]
@@ -398,7 +396,7 @@ exports.bulkImportDevices = async (req, res) => {
             if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
             const template = templateResult[0];
 
-            // 5. Convert Excel serial date to YYYY-MM-DD format
+            // 5. Excel date conversion
             const excelDateToJSDate = (serial) => {
                 const excelEpoch = new Date(1899, 11, 30);
                 const daysSinceEpoch = parseInt(serial, 10);
@@ -408,29 +406,33 @@ exports.bulkImportDevices = async (req, res) => {
 
             const formattedInstallDate = excelDateToJSDate(device.installDate);
 
-            // 6. Insert the device into fac_Device
+            // 6. Insert into fac_Device
             const sqlQuery = `
                 INSERT INTO fac_Device (
-                    Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
-                    Hypervisor, Owner, PrimaryContact, Cabinet, Position, TemplateID, Height, Weight, 
-                    NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots, InstallDate, Status,
-                    HalfDepth, BackSide
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion,
+                    v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
+                    v3AuthPassphrase, v3PrivPassphrase,
+                    Hypervisor, Owner, PrimaryContact, Cabinet, Position,
+                    TemplateID, Height, Weight, NominalWatts,
+                    PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
+                    InstallDate, Status, HalfDepth, BackSide
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             `;
+
             const values = [
                 device.label, device.serialNo, device.assetTag, device.hostname,
-                template.SNMPVersion, 'noAuthNoPriv', 'MD5', 'DES',
+                template.SNMPVersion,
+                'noAuthNoPriv', 'MD5', 'DES',
+                'None', 'None',
                 device.hypervisor || "None", ownerDeptID, primaryContactID, cabinetID, device.position,
-                template.TemplateID, template.Height, template.Weight,
-                template.Wattage, template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,
+                template.TemplateID, template.Height, template.Weight, template.Wattage,
+                template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,
                 formattedInstallDate, device.reservation || '', device.halfDepth || 0, device.backSide || 0
             ];
 
-            // Execute the insert query
             await connection.query(sqlQuery, values);
         }
 
-        // Release connection and respond success
         connection.release();
         res.status(200).send({ message: 'Bulk import successful' });
     } catch (error) {

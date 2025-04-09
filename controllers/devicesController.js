@@ -423,7 +423,7 @@ exports.bulkImportDevices = async (req, res) => {
                 device.label, device.serialNo, device.assetTag, device.hostname,
                 template.SNMPVersion,
                 'noAuthNoPriv', 'MD5', 'DES',
-                '', '', // <- Default empty strings for v3AuthPassphrase and v3PrivPassphrase
+                'None', 'None',
                 device.hypervisor || "None", ownerDeptID, primaryContactID, cabinetID, device.position,
                 template.TemplateID, template.Height, template.Weight, template.Wattage,
                 template.PSCount, template.NumPorts, template.ChassisSlots, template.RearChassisSlots,

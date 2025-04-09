@@ -204,7 +204,7 @@ exports.updateDevice = async (req, res) => {
         `;
 
         const updateValues = [
-            label || '', position || '', height || '', primaryIP || '', serialNo || '', assetTag || '', halfDepth || '', backside || '', hypervisor || '',
+            label || '', position || '', height || '', primaryIP || '', serialNo || '', assetTag || '', halfDepth || 0, backside || 0, hypervisor || '',
             installDate || '', status || '', ownerDeptID || '', primaryContactPersonID || '', templateID || '', deviceID
         ];
 

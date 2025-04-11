@@ -262,6 +262,7 @@ exports.addDevice = async (req, res) => {
         if (cabinetResult.length === 0) throw new Error(`Cabinet not found: ${cabinetLocation} in data center: ${device.dataCenter}`);
         const cabinetID = cabinetResult[0].CabinetID;
 
+        // 4. Get Template if applicable
         let manufacturerID = null;
         let template = {
             TemplateID: 0,
@@ -272,10 +273,10 @@ exports.addDevice = async (req, res) => {
             NumPorts: 0,
             ChassisSlots: 0,
             RearChassisSlots: 0,
-            SNMPVersion: 0
+            SNMPVersion: 0,
+            DeviceType: 'Server'
         };
 
-        // 4. Get Template if applicable
         if (device.manufacturer && device.model) {
             const [manufacturerResult] = await connection.query(
                 'SELECT ManufacturerID FROM fac_Manufacturer WHERE Name = ?',
@@ -285,8 +286,9 @@ exports.addDevice = async (req, res) => {
             manufacturerID = manufacturerResult[0].ManufacturerID;
 
             const [templateResult] = await connection.query(
-                'SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion ' +
-                'FROM fac_DeviceTemplate WHERE Model = ? AND ManufacturerID = ?',
+                `SELECT TemplateID, Height, Weight, Wattage, DeviceType, PSCount, NumPorts, ChassisSlots, RearChassisSlots, SNMPVersion
+                FROM fac_DeviceTemplate
+                WHERE Model = ? AND ManufacturerID = ?`,
                 [device.model, manufacturerID]
             );
             if (templateResult.length === 0) throw new Error(`Template not found for model: ${device.model} and manufacturer: ${device.manufacturer}`);
@@ -296,35 +298,47 @@ exports.addDevice = async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         const installDate = device.installDate || today;
 
-        // 5. Insert into fac_Device with extended fields
+        // 5. Prepare SQL Insert
         const sqlQuery = `
             INSERT INTO fac_Device (
-                Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion, v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
+                Label, SerialNo, AssetTag, PrimaryIP, SNMPVersion,
+                v3SecurityLevel, v3AuthProtocol, v3PrivProtocol,
                 v3AuthPassphrase, v3PrivPassphrase, SNMPCommunity, SNMPFailureCount,
                 Hypervisor, APIUsername, APIPassword, APIPort, ProxMoxRealm,
-                Owner, EscalationTimeID, EscalationID, PrimaryContact, Cabinet, Position,
-                TemplateID, Height, Weight, NominalWatts, PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
-                ParentDevice, MfgDate, InstallDate, WarrantyCo, WarrantyExpire, Notes, Status,
-                HalfDepth, BackSide, AuditStamp, FirstPortNum
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                Owner, EscalationTimeID, EscalationID, PrimaryContact,
+                Cabinet, Position, TemplateID, Height, Weight, NominalWatts,
+                PowerSupplyCount, Ports, ChassisSlots, RearChassisSlots,
+                ParentDevice, MfgDate, InstallDate, WarrantyCo, WarrantyExpire,
+                Notes, Status, HalfDepth, BackSide, AuditStamp,
+                FirstPortNum, DeviceType
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
         const values = [
             device.label, device.serialNo, device.assetTag, device.hostname || '',
-            template.SNMPVersion || 0, 'noAuthNoPriv', 'MD5', 'DES',
-            '', '', '', 0,
+            template.SNMPVersion || 0,
+            'noAuthNoPriv', 'MD5', 'DES', '', '', '', 0,
             device.hypervisor || 'None', '', '', 0, '',
-            ownerDeptID, 0, 0, primaryContactID, cabinetID, device.position || 1,
+            ownerDeptID, 0, 0, primaryContactID,
+            cabinetID, device.position || 1,
             template.TemplateID || 0, template.Height || 0, template.Weight || 0,
-            template.Wattage || 0, template.PSCount || 1, template.NumPorts || 0, template.ChassisSlots || 0, template.RearChassisSlots || 0,
-            0, today, installDate, '', null, '', device.reservation || '',
-            device.halfDepth || 0, device.backside || 0, today, 0
+            template.Wattage || 0, template.PSCount || 1, template.NumPorts || 0,
+            template.ChassisSlots || 0, template.RearChassisSlots || 0,
+            0, today, installDate, '', null,
+            '', device.reservation || '', device.halfDepth || 0,
+            device.backside || 0, today,
+            0, template.DeviceType || device.deviceType || 'Server'
         ];
 
+        // ✅ Log values before inserting
+        console.log("Device Data to be inserted:\n", values);
+
+        // 6. Insert
         await connection.query(sqlQuery, values);
 
         connection.release();
         res.status(200).send({ message: 'Device inserted successfully' });
+
     } catch (error) {
         console.error('Error during device insertion:', error.message);
         res.status(500).send({ error: error.message });
